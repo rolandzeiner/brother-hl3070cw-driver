@@ -45,7 +45,7 @@ main() {
         copy_brother_data
     fi
 
-    log "Starting CUPS $(cupsd -v 2>&1 | head -n 1 || true), filter $("$FILTER" --version)"
+    log "Starting CUPS $(dpkg-query -W -f '${Version}' cups-daemon 2>/dev/null || true), filter $("$FILTER" --version)"
     cupsd -f &
     CUPSD_PID=$!
     local i

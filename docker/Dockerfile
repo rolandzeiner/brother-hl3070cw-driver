@@ -15,10 +15,11 @@ COPY src ./src
 RUN make && build/rastertohl3070cw --version
 
 FROM debian:trixie-slim
-# CUPS and the filters that turn PDF, text and images into page rasters;
-# bsdtar unpacks Brother's .rpm (dpkg-deb, for a .deb, is part of the base)
+# CUPS (scheduler, PPD lister, socket backend) and the filters that turn PDF,
+# text and images into page rasters; bsdtar unpacks Brother's .rpm (dpkg-deb,
+# for a .deb, is part of the base). No recommends: no Avahi, no other drivers.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends cups-daemon cups-client cups-filters ghostscript poppler-utils \
+ && apt-get install -y --no-install-recommends cups cups-client cups-filters ghostscript poppler-utils \
       libarchive-tools \
  && rm -rf /var/lib/apt/lists/* \
  # CUPS's configuration as installed: the entrypoint restores it into the
