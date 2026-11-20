@@ -72,7 +72,9 @@ Then `docker compose up -d print-server`. The log (`docker logs print-server`) e
 
 The container is set up from these settings at every start, so changes made in the web interface
 last until the next restart. Without `WEB_FROM` there is no web interface and no administration from
-the network. CUPS keeps no record of finished jobs: it would store a job's Secure Print PIN with it.
+the network. A finished job stays listed for a day, without its document: iPhones send a job again
+when it disappears from the list right after printing. Its record keeps a Secure Print PIN in the
+container's memory, readable only by root; CUPS never returns it to clients.
 
 ## Web interface behind a reverse proxy
 

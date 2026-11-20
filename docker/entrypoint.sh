@@ -126,8 +126,11 @@ configure_cups() {
             'AccessLogLevel config' \
             'PageLogFormat ""' \
             'ErrorPolicy retry-job' \
-            '# nothing of a finished job is kept: CUPS stores the PIN with the job' \
-            'PreserveJobHistory No' \
+            '# a finished job stays listed for a day: an iPhone asks for its job after' \
+            '# printing and, when the job is gone, sends it again, over and over. Its' \
+            '# document is deleted; its record keeps a Secure Print PIN, on the tmpfs' \
+            '# only, readable by root and never returned to clients' \
+            'PreserveJobHistory 86400' \
             'PreserveJobFiles No' \
             '# AirPrint is announced by the host'"'"'s Avahi (docker/README.md), not by CUPS' \
             'Browsing No' \
@@ -182,7 +185,7 @@ configure_cups() {
         trusted_web "$web"
         printf '%s\n' \
             '  </Limit>' \
-            '  <Limit CUPS-Add-Modify-Printer CUPS-Delete-Printer CUPS-Add-Modify-Class CUPS-Delete-Class CUPS-Set-Default CUPS-Get-Devices Pause-Printer Resume-Printer Enable-Printer Disable-Printer Pause-Printer-After-Current-Job Hold-New-Jobs Release-Held-New-Jobs Deactivate-Printer Activate-Printer Restart-Printer Shutdown-Printer Startup-Printer Promote-Job Schedule-Job-After Cancel-Jobs CUPS-Accept-Jobs CUPS-Reject-Jobs>' \
+            '  <Limit CUPS-Add-Modify-Printer Set-Printer-Attributes CUPS-Delete-Printer CUPS-Add-Modify-Class CUPS-Delete-Class CUPS-Set-Default CUPS-Get-Devices Pause-Printer Resume-Printer Enable-Printer Disable-Printer Pause-Printer-After-Current-Job Hold-New-Jobs Release-Held-New-Jobs Deactivate-Printer Activate-Printer Restart-Printer Shutdown-Printer Startup-Printer Promote-Job Schedule-Job-After Cancel-Jobs CUPS-Accept-Jobs CUPS-Reject-Jobs>' \
             '    AuthType Default' \
             '    Require user @SYSTEM'
         trusted_web "$web"
