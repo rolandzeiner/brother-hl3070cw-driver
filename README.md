@@ -73,21 +73,18 @@ Double-click the downloaded file. The first time, macOS refuses to open it:
 > Apple could not verify "HL3070CW-Driver-0.3.0.pkg" is free of malware that may harm your Mac or
 > compromise your privacy.
 
-(German macOS: „HL3070CW-Driver-0.3.0.pkg" nicht geöffnet.)
-
 macOS shows this for every installer that is not signed with a paid Apple developer certificate,
 which this free project does not have. The package is the one built from this repository's code.
 To open it anyway:
 
-1. Click **Done** (Fertig). Do not click **Move to Trash** (In den Papierkorb legen).
-2. Open **System Settings** (Systemeinstellungen) and click **Privacy & Security** (Datenschutz &
-   Sicherheit) in the sidebar.
-3. Scroll down to **Security** (Sicherheit). There is a line saying that
-   "HL3070CW-Driver-0.3.0.pkg" was blocked to protect your Mac. Click **Open Anyway** (Dennoch öffnen)
-   next to it. The button appears only for about an hour after you tried to open the file; if it
-   is missing, double-click the file again first.
-4. macOS asks once more: click **Open Anyway** (Dennoch öffnen) and confirm with your password or
-   Touch ID. The installer opens.
+1. Click **Done**. Do not click **Move to Trash**.
+2. Open **System Settings** and click **Privacy & Security** in the sidebar.
+3. Scroll down to **Security**. There is a line saying that "HL3070CW-Driver-0.3.0.pkg" was
+   blocked to protect your Mac. Click **Open Anyway** next to it. The button appears only for
+   about an hour after you tried to open the file; if it is missing, double-click the file again
+   first.
+4. macOS asks once more: click **Open Anyway** and confirm with your password or Touch ID. The
+   installer opens.
 
 On macOS 14 Sonoma and older, right-clicking the file and choosing **Open** also works.
 
