@@ -46,9 +46,17 @@ The native version uses some data files (halftone patterns, colour tables and co
 from Brother's own macOS driver for the HL-3070CW. If you have printed with this printer on this
 Mac before, those files are almost certainly there already, and you can go on to step 2.
 
-If not, install Brother's driver first: go to [support.brother.com](https://support.brother.com),
-search for **HL-3070CW**, open **Downloads**, choose macOS and install the printer driver. If
-Brother no longer offers it for your macOS version, use the PostScript version of this driver.
+If not, install Brother's driver first:
+
+1. Open Brother's [HL-3070CW download page](https://support.brother.com/g/b/downloadtop.aspx?c=us&lang=en&prod=hl3070cw_all).
+   To see your country's version of the page, change the region at the top.
+2. Choose **macOS** and your macOS version (or the newest one listed), then download and install
+   the **Printer Driver**. This project was tested with Brother's package
+   `Brother_PrinterDrivers_ColorLaser.pkg`, version 5.0.0. Only the data files from it are used;
+   its Intel program is never run.
+
+If Brother's page offers nothing for macOS, use the PostScript version of this driver. It works
+without Brother's files.
 
 ### 2. Download the installer
 
