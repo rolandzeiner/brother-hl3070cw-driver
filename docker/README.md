@@ -59,13 +59,24 @@ services:
 | `LISTEN` | Address and port CUPS listens on | `*:631` |
 | `ALLOW_FROM` | Addresses or networks that may print, separated by spaces | `@LOCAL` |
 | `PRINTER_UUID` | The printer's UUID | derived from the name and `LISTEN` |
+| `PRINTER_COLOR` | `no` while a colour toner is empty: clients see a black-and-white printer and every job prints in Mono | `yes` |
+| `WEB_FROM` | Addresses that may use the web interface and its administration, for example a reverse proxy that handles the login. Administration from there needs no CUPS login | no web interface |
+| `LOG_LEVEL` | `warn`, `info` or `debug`. At `debug` the log shows each job's settings, Secure Print PIN included | `warn` |
 
 Then `docker compose up -d print-server`. The log (`docker logs print-server`) ends with
 `Printer HL3070CW ready (UUID …)`.
 
-The container is set up from these settings at every start. There is no web interface and no
-administration from the network, and CUPS keeps no record of finished jobs: it would store a job's
-Secure Print PIN with it.
+The container is set up from these settings at every start, so changes made in the web interface
+last until the next restart. Without `WEB_FROM` there is no web interface and no administration from
+the network. CUPS keeps no record of finished jobs: it would store a job's Secure Print PIN with it.
+
+## Web interface behind a reverse proxy
+
+To see the printer and its jobs, cancel jobs or pause the printer in a browser, put a reverse proxy
+with a login in front of CUPS (for example Traefik with Authelia) and set `WEB_FROM` to the address
+the proxy connects from. Only that address gets the web pages and the administration, and it needs
+no CUPS login there, so the proxy must not let anyone through without logging in. Clients in
+`ALLOW_FROM` keep printing but get no web pages.
 
 ## Announce it for AirPrint
 
@@ -119,9 +130,18 @@ sudo ufw allow in from 192.0.2.0/24 to any port 631 proto tcp
 
 ## What clients can choose
 
-AirPrint and IPP Everywhere pass on the standard options: colour or black and white, paper size,
-copies and the Secure Print PIN. Fine quality, Toner Save and Enhance Black Printing are set with
-`PRINTER_OPTIONS` for everyone; on a Mac, the native driver installed locally offers them per job.
+AirPrint and IPP Everywhere pass on the standard options: colour or black and white, quality, paper
+size, copies and the Secure Print PIN. The print server turns colour and quality into the driver's
+options:
+
+| | Black and white | Colour |
+|---|---|---|
+| Draft | Mono, Toner Save | Auto, Toner Save |
+| Normal | Mono | Auto |
+| Best | Mono, Fine quality | Auto, Fine quality |
+
+Colour means Brother's Auto: the printer decides per page. With `PRINTER_COLOR=no` every row prints in
+Mono. Enhance Black Printing has no standard equivalent; set it for everyone with `PRINTER_OPTIONS`.
 
 ## Update
 

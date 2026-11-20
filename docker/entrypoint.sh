@@ -13,6 +13,15 @@
 #   PRINTER_UUID      the printer's UUID; default: derived from name and LISTEN,
 #                     so it stays the same across restarts (AirPrint clients
 #                     and an Avahi service file identify the printer by it)
+#   PRINTER_COLOR     yes, or no while a colour toner is empty: clients then
+#                     see a black-and-white printer and every job prints in
+#                     Mono (default yes)
+#   WEB_FROM          addresses that may use the web interface and its
+#                     administration, e.g. a reverse proxy that does the
+#                     login; administration from there needs no CUPS login
+#                     (default: no web interface)
+#   LOG_LEVEL         warn, info or debug (default warn); debug logs each
+#                     job's settings, Secure Print PIN included
 #
 # Brother's Linux driver package for the HL-3070CW (hl3070cwlpr, .rpm or .deb)
 # is expected in /brother; its files are only unpacked, never run.
@@ -31,6 +40,7 @@ main() {
     local name=${PRINTER_NAME:-HL3070CW} info=${PRINTER_INFO:-Brother HL-3070CW}
     local location=${PRINTER_LOCATION:-} driver=${PRINTER_DRIVER:-native}
     local listen=${LISTEN:-*:631} allow=${ALLOW_FROM:-@LOCAL} options=${PRINTER_OPTIONS:-}
+    local colour=${PRINTER_COLOR:-yes} web=${WEB_FROM:-} loglevel=${LOG_LEVEL:-warn}
 
     # Values that end up in cupsd.conf or on lpadmin's command line: plain
     # characters only, so no setting can add a directive of its own.
@@ -42,22 +52,28 @@ main() {
     safe "PRINTER_OPTIONS" "$options" '^[A-Za-z0-9=_. -]*$'
     safe "PRINTER_INFO" "$info" '^[^"\\[:cntrl:]]{0,127}$'
     safe "PRINTER_LOCATION" "$location" '^[^"\\[:cntrl:]]{0,127}$'
+    safe "PRINTER_COLOR" "$colour" '^(yes|no)$'
+    safe "WEB_FROM" "$web" '^[A-Za-z0-9.:/ -]*$'
+    safe "LOG_LEVEL" "$loglevel" '^(warn|info|debug)$'
     local uuid=${PRINTER_UUID:-$(stable_uuid "hl3070cw-print-server/$name/$listen")}
     safe "PRINTER_UUID" "$uuid" '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 
-    configure_cups "$listen" "$allow"
+    configure_cups "$listen" "$allow" "$web" "$loglevel"
     if [[ $driver == native ]]; then
         copy_brother_data
     fi
 
     log "Starting CUPS $(dpkg-query -W -f '${Version}' cups-daemon 2>/dev/null || true), filter $("$FILTER" --version)"
     start_cupsd
-    setup_printer "$name" "$info" "$location" "$driver" "$options"
+    setup_printer "$name" "$info" "$location" "$driver" "$options" "$colour"
     # CUPS gives a new printer a random UUID; set the stable one while CUPS is stopped
     stop_cupsd
     sed -i "s|^UUID .*|UUID urn:uuid:$uuid|" /etc/cups/printers.conf
     start_cupsd
-    log "Printer $name ready (UUID $uuid): $PRINTER_URI, shared on $listen with ${allow}"
+    log "Printer $name ready (UUID $uuid, colour: $colour): $PRINTER_URI, shared on $listen with ${allow}"
+    if [[ -n $web ]]; then
+        log "Web interface and administration for: $web"
+    fi
     wait "$CUPSD_PID"
 }
 
@@ -91,13 +107,13 @@ safe() {
 }
 
 configure_cups() {
-    local listen=$1 allow=$2 a
+    local listen=$1 allow=$2 web=$3 loglevel=$4 a
     # /etc/cups is an empty tmpfs: start from the configuration the package installed
     cp -a "$CUPS_TEMPLATE/." /etc/cups/
     {
         printf '%s\n' \
             '# Written by the print server at every start; changes here do not last.' \
-            'LogLevel warn' \
+            "LogLevel $loglevel" \
             '# no dump of a failed job'"'"'s settings into the log: they hold its Secure Print PIN' \
             'LogDebugHistory 0' \
             'MaxLogSize 0' \
@@ -110,24 +126,41 @@ configure_cups() {
             '# AirPrint is announced by the host'"'"'s Avahi (docker/README.md), not by CUPS' \
             'Browsing No' \
             'BrowseLocalProtocols none' \
-            'WebInterface No' \
             'DefaultShared Yes' \
             'ServerAlias *' \
             'DefaultAuthType Basic' \
-            'Listen /run/cups/cups.sock' \
-            'Listen 127.0.0.1:631'
+            'Listen /run/cups/cups.sock'
         if [[ $listen == '*:631' ]]; then
-            printf 'Port 631\n'
+            printf 'Port 631\n' # every address, localhost included
         else
-            printf 'Listen %s\n' "$listen"
+            printf 'Listen 127.0.0.1:631\nListen %s\n' "$listen"
         fi
-        printf '<Location />\n  Order allow,deny\n  Allow from 127.0.0.1\n'
-        for a in $allow; do
-            printf '  Allow from %s\n' "$a"
-        done
-        printf '</Location>\n'
-        # administration only from inside the container
-        printf '<Location /admin>\n  Order allow,deny\n  Allow from 127.0.0.1\n</Location>\n'
+        if [[ -z $web ]]; then
+            printf 'WebInterface No\n<Location />\n  Order allow,deny\n  Allow from 127.0.0.1\n'
+            for a in $allow; do
+                printf '  Allow from %s\n' "$a"
+            done
+            printf '</Location>\n'
+            # administration only from inside the container
+            printf '<Location /admin>\n  Order allow,deny\n  Allow from 127.0.0.1\n</Location>\n'
+        else
+            # Web pages (GET) for WEB_FROM only; printing (IPP is POST) for the
+            # clients as well
+            printf 'WebInterface Yes\n<Location />\n  Order allow,deny\n  Allow from 127.0.0.1\n'
+            for a in $web; do
+                printf '  Allow from %s\n' "$a"
+            done
+            printf '  <Limit POST>\n    Order allow,deny\n    Allow from 127.0.0.1\n'
+            for a in $allow $web; do
+                printf '    Allow from %s\n' "$a"
+            done
+            printf '  </Limit>\n</Location>\n'
+            printf '<Location /admin>\n  Order allow,deny\n  Allow from 127.0.0.1\n'
+            for a in $web; do
+                printf '  Allow from %s\n' "$a"
+            done
+            printf '</Location>\n'
+        fi
         printf '<Location /admin/conf>\n  AuthType Default\n  Require user @SYSTEM\n  Order allow,deny\n  Allow from 127.0.0.1\n</Location>\n'
         printf '%s\n' \
             '<Policy default>' \
@@ -143,13 +176,15 @@ configure_cups() {
             '    Order deny,allow' \
             '  </Limit>' \
             '  <Limit Cancel-Job CUPS-Authenticate-Job>' \
-            '    Require user @OWNER @SYSTEM' \
-            '    Order deny,allow' \
+            '    Require user @OWNER @SYSTEM'
+        trusted_web "$web"
+        printf '%s\n' \
             '  </Limit>' \
             '  <Limit CUPS-Add-Modify-Printer CUPS-Delete-Printer CUPS-Add-Modify-Class CUPS-Delete-Class CUPS-Set-Default CUPS-Get-Devices Pause-Printer Resume-Printer Enable-Printer Disable-Printer Pause-Printer-After-Current-Job Hold-New-Jobs Release-Held-New-Jobs Deactivate-Printer Activate-Printer Restart-Printer Shutdown-Printer Startup-Printer Promote-Job Schedule-Job-After Cancel-Jobs CUPS-Accept-Jobs CUPS-Reject-Jobs>' \
             '    AuthType Default' \
-            '    Require user @SYSTEM' \
-            '    Order deny,allow' \
+            '    Require user @SYSTEM'
+        trusted_web "$web"
+        printf '%s\n' \
             '  </Limit>' \
             '  <Limit All>' \
             '    Order deny,allow' \
@@ -160,6 +195,20 @@ configure_cups() {
     sed -i -e 's|^#\{0,1\}ErrorLog .*|ErrorLog stderr|' -e 's|^#\{0,1\}AccessLog .*|AccessLog stderr|' \
         -e 's|^#\{0,1\}PageLog .*|PageLog stderr|' /etc/cups/cups-files.conf
     grep -q '^ErrorLog stderr' /etc/cups/cups-files.conf || printf 'ErrorLog stderr\nAccessLog stderr\nPageLog stderr\n' >>/etc/cups/cups-files.conf
+}
+
+# Inside a policy Limit: WEB_FROM passes by its address alone (its proxy did
+# the login); everyone else still needs what the Limit requires.
+trusted_web() {
+    local a
+    if [[ -z $1 ]]; then
+        printf '    Order deny,allow\n'
+        return
+    fi
+    printf '    Satisfy any\n    Order deny,allow\n    Deny from all\n    Allow from 127.0.0.1\n'
+    for a in $1; do
+        printf '    Allow from %s\n' "$a"
+    done
 }
 
 copy_brother_data() {
@@ -180,11 +229,17 @@ copy_brother_data() {
 }
 
 setup_printer() {
-    local name=$1 info=$2 location=$3 driver=$4 options=$5 file model opt
-    file=hl3070cw-$driver.ppd
-    model=$(lpinfo -m 2>/dev/null | awk -v f="/hl3070cw/$file" 'index($1, f) == length($1) - length(f) + 1 { print $1; exit }') || true
-    [[ -n $model ]] || die "CUPS does not list $file"
-    lpadmin -p "$name" -v "$PRINTER_URI" -m "$model" -D "$info" -L "$location" -E \
+    local name=$1 info=$2 location=$3 driver=$4 options=$5 colour=$6 ppd opt
+    # The PPD is handed over as a file (the printer is new at every start, so
+    # there are no saved settings to keep), adapted first where needed.
+    ppd=/tmp/print-server.ppd
+    cp "/usr/share/ppd/hl3070cw/hl3070cw-$driver.ppd" "$ppd"
+    if [[ $colour == no ]]; then
+        # a black-and-white printer for the clients, and Mono whatever they ask for
+        sed -i -e 's/^\*ColorDevice: .*/*ColorDevice: False/' -e 's/^\*DefaultBRMonoColor: .*/*DefaultBRMonoColor: Mono/' \
+            -e '/^\*APPrinterPreset /s/\*BRMonoColor [A-Za-z]*/*BRMonoColor Mono/' "$ppd"
+    fi
+    lpadmin -p "$name" -v "$PRINTER_URI" -P "$ppd" -D "$info" -L "$location" -E \
         -o printer-is-shared=true -o printer-error-policy=retry-job 2>&1 | grep -v 'deprecated' || true
     lpstat -p "$name" >/dev/null 2>&1 || die "lpadmin could not create printer $name"
     for opt in $options; do

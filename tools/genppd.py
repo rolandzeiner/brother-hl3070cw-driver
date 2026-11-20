@@ -183,8 +183,28 @@ def native(linux: bool = False) -> str:
                              [("OFF", "Off", pd("cupsInteger2", 0)),
                               ("BRLessPaperCurl", "Reduce Paper Curl", pd("cupsInteger2", 1)),
                               ("BRFixIntensity", "Improve Toner Fixing", pd("cupsInteger2", 2))])
+    if linux:
+        lines += [""] + airprint_presets()
     lines += [""] + fonts()
     return "\n".join(lines) + "\n"
+
+
+def airprint_presets() -> list[str]:
+    """How CUPS maps the standard IPP choices of AirPrint / IPP Everywhere
+    clients (print-color-mode x print-quality) onto this PPD's options. Only
+    in the Linux PPD: shared from a print server, clients see no PPD options.
+    Colour means Brother's Auto (the printer decides per page); draft quality
+    is Toner Save, best quality is Fine."""
+    lines = ["*% AirPrint / IPP Everywhere: print-color-mode x print-quality -> options"]
+    for mode, colour, text in (("monochrome", "Mono", "Black and White"), ("color", "Auto", "Color")):
+        for quality, extra, qtext in (("low", "*BRResolution 600dpi *TonerSaveMode ON", "Draft"),
+                                      ("mid", "*BRResolution 600dpi", "Normal"),
+                                      ("high", "*BRResolution 600x2400dpi", "Best")):
+            name = f"{'Gray' if mode == 'monochrome' else 'Color'}_{qtext}"
+            lines.append(f'*APPrinterPreset {name}/{text}, {qtext}: "*BRMonoColor {colour} {extra} '
+                         f'com.apple.print.preset.graphicsType General com.apple.print.preset.quality {quality} '
+                         f'com.apple.print.preset.output-mode {mode}"')
+    return lines
 
 
 def postscript() -> str:

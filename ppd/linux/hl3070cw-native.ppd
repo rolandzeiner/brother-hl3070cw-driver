@@ -205,6 +205,14 @@
 *BRImproveOutput BRFixIntensity/Improve Toner Fixing: "<</cupsInteger2 2>>setpagedevice"
 *CloseUI: *BRImproveOutput
 
+*% AirPrint / IPP Everywhere: print-color-mode x print-quality -> options
+*APPrinterPreset Gray_Draft/Black and White, Draft: "*BRMonoColor Mono *BRResolution 600dpi *TonerSaveMode ON com.apple.print.preset.graphicsType General com.apple.print.preset.quality low com.apple.print.preset.output-mode monochrome"
+*APPrinterPreset Gray_Normal/Black and White, Normal: "*BRMonoColor Mono *BRResolution 600dpi com.apple.print.preset.graphicsType General com.apple.print.preset.quality mid com.apple.print.preset.output-mode monochrome"
+*APPrinterPreset Gray_Best/Black and White, Best: "*BRMonoColor Mono *BRResolution 600x2400dpi com.apple.print.preset.graphicsType General com.apple.print.preset.quality high com.apple.print.preset.output-mode monochrome"
+*APPrinterPreset Color_Draft/Color, Draft: "*BRMonoColor Auto *BRResolution 600dpi *TonerSaveMode ON com.apple.print.preset.graphicsType General com.apple.print.preset.quality low com.apple.print.preset.output-mode color"
+*APPrinterPreset Color_Normal/Color, Normal: "*BRMonoColor Auto *BRResolution 600dpi com.apple.print.preset.graphicsType General com.apple.print.preset.quality mid com.apple.print.preset.output-mode color"
+*APPrinterPreset Color_Best/Color, Best: "*BRMonoColor Auto *BRResolution 600x2400dpi com.apple.print.preset.graphicsType General com.apple.print.preset.quality high com.apple.print.preset.output-mode color"
+
 *DefaultFont: Courier
 *Font Courier: Standard "(002.004S)" Standard ROM
 *Font Helvetica: Standard "(001.006S)" Standard ROM
