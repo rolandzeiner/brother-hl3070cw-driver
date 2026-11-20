@@ -9,6 +9,10 @@ The image contains only this project's code. Brother's data files come from Brot
 package, which you download yourself; the container unpacks it at every start and never runs
 Brother's program.
 
+It is built on Debian testing (forky), which carries the current CUPS 2.4 release with its security
+fixes; Debian stable stays on CUPS 2.4.10. To build on stable anyway, pass
+`--build-arg DEBIAN=trixie-slim`.
+
 ## What you need
 
 - Docker with Compose on a Linux machine that is always on (tested on a Raspberry Pi with
@@ -77,6 +81,11 @@ with a login in front of CUPS (for example Traefik with Authelia) and set `WEB_F
 the proxy connects from. Only that address gets the administration, and it needs no CUPS login
 there, so the proxy must not let anyone through without logging in. Clients in `ALLOW_FROM` can
 print and read the status pages, but not change anything.
+
+The image gives the web interface a look of its own (`docker/web/`) in every language CUPS ships:
+a start page, light and dark mode, a layout that works on a phone. The server settings on the
+Administration page are hidden: saving them rewrites CUPS's configuration and would drop the
+container's access rules until the next restart.
 
 ## Announce it for AirPrint
 

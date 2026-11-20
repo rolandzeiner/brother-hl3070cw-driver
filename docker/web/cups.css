@@ -1,0 +1,808 @@
+/*
+ * Look of the print server's web interface: replaces CUPS's own cups.css.
+ * The markup is CUPS 2.4's, with header and footer adjusted by
+ * patch-templates.sh. Idea: each page is a press proof, a white sheet with
+ * crop marks lying on the press-room table; the mark is a process-colour
+ * control strip. Process colours appear only where they mean something:
+ * yellow marks held jobs, magenta the keyboard focus.
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+:root {
+  color-scheme: light dark;
+  --canvas: #e6e8eb;          /* press-room grey */
+  --paper: #ffffff;
+  --ink: #231f20;             /* 100 K as Adobe shows it on screen */
+  --ink-2: #5a5e64;           /* secondary text, 6.4:1 on paper */
+  --rule: #c8ccd1;
+  --field: #ffffff;
+  --crop: #231f20;
+  --cyan: #00aeef;
+  --magenta: #ec008c;
+  --yellow: #fff200;
+  --font: "Helvetica Neue", Helvetica, "Nimbus Sans", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --sheet: 72rem;
+  --pad: 2.5rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --canvas: #1d1f22;
+    --paper: #272a2e;
+    --ink: #ecedee;
+    --ink-2: #a6abb1;
+    --rule: #41454b;
+    --field: #202326;
+    --crop: #8f949a;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--canvas);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font: 16px/1.5 var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- header: the mark and the sections ------------------------------------ */
+
+.cups-header {
+  max-width: var(--sheet);
+  margin: 0 auto;
+  padding: 1.75rem var(--pad) 1.5rem;
+}
+
+.cups-header ul {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 1.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cups-header li.brand {
+  margin-right: auto;
+}
+
+/* The brand links home, and printer classes are of no use with one printer:
+   both stay reachable, just not in the bar. */
+.cups-header li:not(.brand):has(> a[href="/"]),
+.cups-header li:has(> a[href="/classes/"]) {
+  display: none;
+}
+
+.cups-header a:link,
+.cups-header a:visited {
+  color: var(--ink);
+  font-size: 15px;
+  text-decoration: none;
+  padding-bottom: 0.2rem;
+}
+
+.cups-header a:hover {
+  box-shadow: inset 0 -1px 0 var(--ink);
+}
+
+.cups-header a.active {
+  font-weight: 700;
+  box-shadow: inset 0 -2px 0 var(--ink);
+}
+
+.cups-header li.brand a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  box-shadow: none;
+}
+
+/* the control strip: cyan, magenta, yellow, black, with paper between */
+.cups-header li.brand a::before {
+  content: "";
+  width: 47px;
+  height: 12px;
+  background:
+    linear-gradient(var(--cyan), var(--cyan)) 0 0 / 11px 100% no-repeat,
+    linear-gradient(var(--magenta), var(--magenta)) 12px 0 / 11px 100% no-repeat,
+    linear-gradient(var(--yellow), var(--yellow)) 24px 0 / 11px 100% no-repeat,
+    linear-gradient(#231f20, #231f20) 36px 0 / 11px 100% no-repeat;
+  outline: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  outline-offset: 1px;
+}
+
+/* ---- the sheet -------------------------------------------------------------- */
+
+.cups-body {
+  position: relative;
+  max-width: var(--sheet);
+  margin: 0 auto 2.75rem;
+  padding: var(--pad) var(--pad) 3rem;
+  background: var(--paper);
+}
+
+/* crop marks: outside the trim, in line with its edges, clear of the corners */
+.cups-body::before {
+  content: "";
+  position: absolute;
+  inset: -18px;
+  pointer-events: none;
+  --m: linear-gradient(var(--crop), var(--crop));
+  background:
+    var(--m) left 18px top 0 / 1px 12px,
+    var(--m) left 0 top 18px / 12px 1px,
+    var(--m) right 18px top 0 / 1px 12px,
+    var(--m) right 0 top 18px / 12px 1px,
+    var(--m) left 18px bottom 0 / 1px 12px,
+    var(--m) left 0 bottom 18px / 12px 1px,
+    var(--m) right 18px bottom 0 / 1px 12px,
+    var(--m) right 0 bottom 18px / 12px 1px;
+  background-repeat: no-repeat;
+}
+
+/* contain the help pages' floating sidebar (a clearfix ::after would
+   become a flex item in the rows below and leave a gap) */
+.cups-body,
+.row {
+  display: flow-root;
+}
+
+/* sections side by side: administration, the start page */
+.row:has(> .halves),
+.row:has(> .thirds) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 3rem;
+}
+
+.row > .halves {
+  flex: 1 1 22rem;
+  min-width: 0;
+}
+
+.row > .thirds {
+  flex: 1 1 15rem;
+  min-width: 0;
+}
+
+/* ---- type ------------------------------------------------------------------- */
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  margin: 0;
+  font-weight: 700;
+  text-align: left;
+}
+
+h1 {
+  margin-bottom: 1.25rem;
+  font-size: 2.5rem;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  margin: 2.25rem 0 0.75rem;
+  font-size: 1.625rem;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+h3 {
+  margin: 1.75rem 0 0.5rem;
+  font-size: 1.25rem;
+  line-height: 1.25;
+}
+
+h4 {
+  margin: 1.25rem 0 0.25rem;
+  font-size: 1rem;
+}
+
+/* CUPS's section headings: a rule above marks where a section starts.
+   flow-root keeps the rule clear of the help pages' sidebar. */
+h2.title,
+h3.title {
+  display: flow-root;
+  padding-top: 0.75rem;
+  border-top: 2px solid var(--ink);
+}
+
+/* a heading right under the page title is its subtitle: the printer's
+   state, the printer an options form is for */
+h1 + h2.title {
+  margin-top: -0.5rem;
+  padding-top: 0;
+  border-top: 0;
+  color: var(--ink-2);
+  font-size: 1.25rem;
+  font-weight: 400;
+}
+
+/* the help pages repeat the page title in the document */
+h1.title {
+  display: none;
+}
+
+/* the option groups' jump links */
+h3.title:has(> a[href^="#"]) {
+  margin-top: 1.5rem;
+  padding-top: 0;
+  border-top: 0;
+  font-size: 15px;
+  font-weight: 400;
+}
+
+h2.title {
+  font-size: 1.375rem;
+}
+
+.cups-body > .row > h2.title:first-of-type,
+.halves > h2.title:first-child,
+.thirds > h2.title:first-child {
+  margin-top: 0.5rem;
+}
+
+p,
+li,
+dd {
+  max-width: 70ch;
+}
+
+p {
+  margin: 0 0 1rem;
+}
+
+/* a line with a search field: keep the buttons beside it */
+p:has(input) {
+  max-width: none;
+}
+
+p,
+td,
+th,
+h1,
+h2,
+h3,
+h4,
+div {
+  text-align: left;
+}
+
+small {
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+b,
+strong {
+  font-weight: 700;
+}
+
+hr {
+  margin: 2rem 0;
+  border: 0;
+  border-top: 1px solid var(--rule);
+}
+
+a:link,
+a:visited {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--rule);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+
+a:hover {
+  text-decoration-color: var(--magenta);
+}
+
+:focus-visible {
+  outline: 2px solid var(--magenta);
+  outline-offset: 2px;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+a img {
+  border: 0;
+}
+
+pre,
+code,
+kbd,
+tt {
+  font-family: var(--mono);
+  font-size: 0.875em;
+}
+
+pre {
+  overflow-x: auto;
+  padding: 0.85rem 1rem;
+  background: var(--canvas);
+  line-height: 1.45;
+}
+
+blockquote {
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  border-left: 3px solid var(--ink-2);
+  background: color-mix(in srgb, var(--canvas) 60%, var(--paper));
+}
+
+/* ---- tables ----------------------------------------------------------------- */
+
+table {
+  border-collapse: collapse;
+  margin: 0 auto 0 0;     /* CUPS centres some tables with ALIGN */
+}
+
+td,
+th {
+  padding: 0.45rem 1.25rem 0.45rem 0;
+  vertical-align: top;
+  font-size: 15px;
+}
+
+th {
+  font-weight: 700;
+}
+
+/* key and value: the printer's description, the option forms */
+th.label,
+th.sublabel,
+table[summary]:not(.list) th {
+  width: auto;
+  padding-right: 1.75rem;
+  color: var(--ink-2);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+th.sublabel {
+  padding-left: 1.25rem;
+}
+
+table.list {
+  width: 100%;
+  margin: 1rem 0 1.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+table.list thead th {
+  padding: 0.4rem 1rem 0.4rem 0;
+  border-bottom: 2px solid var(--ink);
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+table.list thead th a {
+  color: inherit;
+}
+
+table.list td {
+  padding: 0.7rem 1rem 0.7rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+/* held jobs, the ones that wait for someone: a yellow bar, as on a proof */
+table.list tr:has(input[name="OP"][value="release-job"]) td:first-child {
+  box-shadow: inset 4px 0 0 var(--yellow);
+  padding-left: 0.85rem;
+}
+
+/* the job controls: buttons in a row, without the stray colons CUPS puts between */
+table.list td:last-child:has(form) {
+  font-size: 0;
+  white-space: nowrap;
+}
+
+table.list td:last-child form {
+  display: inline-block;
+  margin: 0 0.4rem 0.4rem 0;
+  font-size: 15px;
+}
+
+table.list td:last-child input[type="submit"] {
+  min-height: 2rem;
+  margin: 0;
+  padding: 0.3rem 0.65rem;
+  font-size: 14px;
+}
+
+table.inset,
+div.table table,
+div.summary table {
+  margin: 1rem 0;
+  border-top: 2px solid var(--ink);
+}
+
+table.inset td,
+table.inset th,
+div.table table td,
+div.table table th,
+div.summary table td,
+div.summary table th {
+  padding: 0.45rem 1rem 0.45rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+caption {
+  padding: 0.5rem 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  text-align: left;
+  caption-side: bottom;
+}
+
+/* ---- forms ------------------------------------------------------------------ */
+
+form {
+  display: inline;
+  margin: 0;
+}
+
+input,
+select,
+textarea,
+button {
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+}
+
+input[type="text"],
+input[type="search"],
+input[type="password"],
+input[type="number"],
+input[type="email"],
+input[type="url"],
+select,
+textarea {
+  min-height: 2.375rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background-color: var(--field);
+  vertical-align: middle;
+}
+
+input[type="text"]:hover,
+input[type="search"]:hover,
+select:hover,
+textarea:hover {
+  border-color: var(--ink-2);
+}
+
+textarea {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 14px;
+}
+
+select {
+  appearance: none;
+  padding-right: 2.1rem;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ink-2) 50%),
+    linear-gradient(135deg, var(--ink-2) 50%, transparent 50%);
+  background-position: right 1.05rem top 50%, right 0.75rem top 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+input[type="submit"],
+input[type="button"],
+input[type="reset"],
+button {
+  appearance: none;
+  min-height: 2.375rem;
+  padding: 0.45rem 0.95rem;
+  border: 1.5px solid var(--ink);
+  border-radius: 3px;
+  background: var(--paper);
+  font-weight: 700;
+  line-height: 1.2;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+input[type="submit"]:hover,
+input[type="button"]:hover,
+input[type="reset"]:hover,
+button:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0 0.45rem 0 0;
+  vertical-align: -0.15rem;
+  accent-color: var(--ink);
+}
+
+label {
+  cursor: pointer;
+}
+
+input[type="image"] {
+  border: 0;
+  vertical-align: bottom;
+}
+
+/* buttons and menus in a row (a printer's Maintenance and Administration,
+   the job filters) wrap without indenting the next line */
+.cups-body input[type="submit"],
+.cups-body select {
+  margin: 0 0.25rem 0.5rem 0;
+}
+
+/* the server settings rewrite cupsd.conf and would drop the container's
+   access rules until the next restart; the container's settings own them */
+.halves:has(input[name="OP"][value="config-server"]) {
+  display: none;
+}
+
+.conflict {
+  color: var(--magenta);
+  font-weight: 700;
+}
+
+th.conflict {
+  text-align: left;
+}
+
+/* the option pages: all groups shown one after another */
+div.tabs {
+  height: auto;
+  overflow: visible;
+}
+
+div.tab {
+  float: none;
+  height: auto;
+  overflow: visible;
+}
+
+div.tab > table {
+  width: auto;
+  margin-bottom: 1.5rem;
+}
+
+/* one label column for all groups */
+div.tab th.label {
+  width: 15rem;
+}
+
+/* ---- help pages --------------------------------------------------------------- */
+
+div.sidebar {
+  float: right;
+  width: 18rem;
+  margin: 0 0 1.5rem 2.5rem;
+  padding: 0.25rem 0 0 1.25rem;
+  border-left: 2px solid var(--ink);
+  font-size: 14px;
+}
+
+div.sidebar h2,
+div.sidebar h3 {
+  margin: 0 0 0.75rem;
+  padding: 0;
+  border: 0;
+  font-size: 1.125rem;
+}
+
+div.sidebar table,
+div.sidebar td {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+div.sidebar p {
+  margin: 0 0 0.3rem;
+}
+
+div.sidebar p.l1 {
+  padding-left: 0.9rem;
+}
+
+div.sidebar p.l2 {
+  padding-left: 1.8rem;
+}
+
+dt {
+  margin-top: 0.75rem;
+  font-weight: 700;
+}
+
+dd {
+  margin: 0.2rem 0 0 1.5rem;
+}
+
+span.info {
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 400;
+  vertical-align: middle;
+}
+
+.mobile {
+  display: none;
+}
+
+/* ---- the start page (index.html) ------------------------------------------------ */
+
+p.lede {
+  max-width: 52ch;
+  color: var(--ink-2);
+  font-size: 1.25rem;
+  line-height: 1.4;
+}
+
+ul.entries {
+  margin: 2.5rem 0 2rem;
+  padding: 0;
+  list-style: none;
+  border-top: 2px solid var(--ink);
+}
+
+ul.entries li {
+  max-width: none;
+  padding: 1.1rem 0 1.2rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+ul.entries a {
+  font-size: 1.625rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+
+ul.entries a:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--magenta);
+}
+
+ul.entries p {
+  margin: 0.2rem 0 0;
+  color: var(--ink-2);
+}
+
+p.note {
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+/* ---- footer -------------------------------------------------------------------- */
+
+.cups-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.75rem;
+  max-width: var(--sheet);
+  margin: 0 auto;
+  padding: 0 var(--pad) 2.5rem;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.cups-footer a:link,
+.cups-footer a:visited {
+  color: var(--ink-2);
+}
+
+/* ---- small screens ----------------------------------------------------------------- */
+
+@media (max-width: 720px) {
+  :root {
+    --pad: 1.25rem;
+  }
+
+  .cups-header {
+    padding: 1.1rem var(--pad) 1rem;
+  }
+
+  .cups-header ul {
+    gap: 0.35rem 1.25rem;
+  }
+
+  .cups-header li.brand {
+    flex-basis: 100%;
+    margin-bottom: 0.35rem;
+  }
+
+  .cups-body {
+    margin-bottom: 1.5rem;
+    padding: 1.75rem var(--pad) 2rem;
+  }
+
+  .cups-body::before {
+    display: none;
+  }
+
+  h1 {
+    font-size: 2rem;
+  }
+
+  div.sidebar {
+    float: none;
+    width: auto;
+    margin: 1.5rem 0;
+  }
+
+  table.list {
+    display: block;
+    overflow-x: auto;
+  }
+
+  div.tab th.label,
+  div.tab td {
+    display: block;
+    width: auto;
+    padding-right: 0;
+  }
+
+  div.tab th.label {
+    padding-bottom: 0.15rem;
+  }
+
+  div.tab select {
+    max-width: 100%;
+  }
+
+  .cups-footer {
+    padding-bottom: 1.5rem;
+  }
+}
+
+@media print {
+  html,
+  body,
+  .cups-body {
+    background: #fff;
+    color: #000;
+  }
+
+  .cups-header,
+  .cups-footer,
+  .cups-body::before,
+  form {
+    display: none;
+  }
+}
