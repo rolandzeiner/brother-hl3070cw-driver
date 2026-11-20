@@ -241,13 +241,13 @@ static int extract_brother_data(const char *dir) {
   snprintf(path, sizeof path, "%s/profiles", dir);
   if (mkdir(path, 0755) && errno != EEXIST)
     failed = 1;
-  static const char *const profiles[] = {"broch08_PL_NM.icm", "broch08_PL_NM_IG_ON.icm", "broch08_PL_VV.icm",
-                                         "broch08_PL_VV_IG_ON.icm", "broch08_PL_Fi.icm", "broch08_PL_Fi_IG_ON.icm"};
+  static const char *const profiles[] = {"broch08_PL_NM.icm", "broch08_PL_NM_IG_ON.icm", "broch08_PL_Fi.icm",
+                                         "broch08_PL_Fi_IG_ON.icm"};
   for (size_t i = 0; i < sizeof profiles / sizeof profiles[0]; i++) {
     snprintf(path, sizeof path, "%s/%s", BROTHER_PROFILES_DIR, profiles[i]);
     snprintf(dst, sizeof dst, "%s/profiles/%s", dir, profiles[i]);
-    if (access(path, R_OK) == 0 && copy_file(path, dst)) {
-      fprintf(stderr, "cannot copy %s\n", path);
+    if (copy_file(path, dst)) {
+      fprintf(stderr, "cannot copy %s: %s\n", path, strerror(errno));
       failed = 1;
     }
   }
