@@ -44,10 +44,8 @@ void xl_buf_free(xl_buf *b) {
   b->len = b->cap = 0;
 }
 
-/* ---- line encoder (method 2, 12-pixel units) ------------------------------ */
+/* ---- line encoder --------------------------------------------------------- */
 
-#define UNIT_BITS 12
-#define COPY_DIST 2
 #define BAND_LIMIT 27000 /* a new band starts once a band holds this many bytes */
 
 typedef struct {
@@ -81,21 +79,33 @@ static void bw_ext(bitw *w, size_t value) {
   bw_put(w, (unsigned)value, 8);
 }
 
-static void put_repeat(bitw *w, unsigned unit, size_t count) {
-  if (count <= 7) {
-    bw_put(w, 0x8u | (unsigned)(count - 1), 4);
-    bw_put(w, unit, UNIT_BITS);
+typedef struct {
+  unsigned unit;     /* unit width in bits */
+  unsigned rep_bits; /* bits of the repeat count */
+  size_t copy_dist;  /* back-reference distance in units */
+} enc_params;
+
+/* Repeat: 1 + count bits + unit; method 2 uses a 3-bit count, method 4 makes
+ * command plus unit exactly 16 bits. */
+static void put_repeat(bitw *w, const enc_params *e, unsigned unit, size_t count) {
+  size_t max = (1u << e->rep_bits) - 1;
+  if (count <= max) {
+    bw_put(w, 1, 1);
+    bw_put(w, (unsigned)(count - 1), e->rep_bits);
+    bw_put(w, unit, e->unit);
   } else {
-    bw_put(w, 0xFu, 4);
-    bw_put(w, unit, UNIT_BITS);
+    bw_put(w, 1, 1);
+    bw_put(w, (unsigned)max, e->rep_bits);
+    bw_put(w, unit, e->unit);
     bw_align(w);
-    bw_ext(w, count - 8);
+    bw_ext(w, count - max - 1);
   }
+  bw_align(w);
 }
 
-static void put_literal(bitw *w, const uint16_t *units, size_t n) {
+static void put_literal(bitw *w, const enc_params *e, const uint32_t *units, size_t n) {
   if (n == 1) {
-    put_repeat(w, units[0], 1);
+    put_repeat(w, e, units[0], 1);
     return;
   }
   if (n - 2 < 63) {
@@ -105,7 +115,7 @@ static void put_literal(bitw *w, const uint16_t *units, size_t n) {
     bw_ext(w, n - 65);
   }
   for (size_t i = 0; i < n; i++)
-    bw_put(w, units[i], UNIT_BITS);
+    bw_put(w, units[i], e->unit);
   bw_align(w);
 }
 
@@ -118,12 +128,13 @@ static void put_copy(bitw *w, size_t count) {
   }
 }
 
-static uint16_t *g_units;
+static uint32_t *g_units;
 static size_t g_units_cap;
 
-void xl_encode_line(const uint8_t *row, size_t bpl, xl_buf *out) {
+void xl_encode_line(const uint8_t *row, size_t bpl, int method, int unit, xl_buf *out) {
+  enc_params e = {(unsigned)unit, method == 2 ? 3u : (unsigned)(15 - unit), method == 2 ? 2u : 4u};
   size_t nbits = bpl * 8;
-  size_t n = (nbits + UNIT_BITS - 1) / UNIT_BITS;
+  size_t n = (nbits + e.unit - 1) / e.unit;
   if (n > g_units_cap) {
     free(g_units);
     g_units = malloc(n * sizeof *g_units);
@@ -133,41 +144,44 @@ void xl_encode_line(const uint8_t *row, size_t bpl, xl_buf *out) {
     }
     g_units_cap = n;
   }
-  uint16_t *u = g_units;
+  uint32_t *u = g_units;
   for (size_t k = 0; k < n; k++) {
-    unsigned v = 0;
-    for (unsigned i = 0; i < UNIT_BITS; i++) {
-      size_t pos = k * UNIT_BITS + i;
+    uint32_t v = 0;
+    for (unsigned i = 0; i < e.unit; i++) {
+      size_t pos = k * e.unit + i;
       unsigned bit = pos < nbits ? (row[pos >> 3] >> (7 - (pos & 7))) & 1u : 0u;
       v = (v << 1) | bit;
     }
-    u[k] = (uint16_t)v;
+    u[k] = v;
   }
 
   bitw w = {out, 0, 0};
   size_t i = 0;
   size_t lit_start = 0, lit_len = 0;
+  /* Brother's priorities: method 2 takes a run of equal units before a
+   * back-reference, method 4 the other way round. A back-reference may reach
+   * before the line start, where units count as 0, but the first unit of a
+   * line is never a back-reference. */
+  int copy_first = method == 4;
   while (i < n) {
+    size_t cp = 0;
+    while (i > 0 && i + cp < n && u[i + cp] == (i + cp >= e.copy_dist ? u[i + cp - e.copy_dist] : 0))
+      cp++;
     size_t run = 1;
     while (i + run < n && u[i + run] == u[i])
       run++;
-    if (run >= 2) {
+    int take_copy = cp >= 2 && (copy_first || run < 2);
+    if (take_copy || run >= 2) {
       if (lit_len)
-        put_literal(&w, u + lit_start, lit_len);
+        put_literal(&w, &e, u + lit_start, lit_len);
       lit_len = 0;
-      put_repeat(&w, u[i], run);
-      i += run;
-      continue;
-    }
-    size_t cp = 0;
-    while (i + cp < n && i + cp >= COPY_DIST && u[i + cp] == u[i + cp - COPY_DIST])
-      cp++;
-    if (cp >= 2) {
-      if (lit_len)
-        put_literal(&w, u + lit_start, lit_len);
-      lit_len = 0;
-      put_copy(&w, cp);
-      i += cp;
+      if (take_copy) {
+        put_copy(&w, cp);
+        i += cp;
+      } else {
+        put_repeat(&w, &e, u[i], run);
+        i += run;
+      }
       continue;
     }
     if (!lit_len)
@@ -176,7 +190,7 @@ void xl_encode_line(const uint8_t *row, size_t bpl, xl_buf *out) {
     i++;
   }
   if (lit_len)
-    put_literal(&w, u + lit_start, lit_len);
+    put_literal(&w, &e, u + lit_start, lit_len);
 }
 
 /* ---- PCL XL primitives (little-endian binding) ---------------------------- */
@@ -255,11 +269,13 @@ int xl_job_begin(xl_writer *w, FILE *out, const xl_job *job) {
   fprintf(out, "@PJL SET STRINGCODESET=HPROMAN8\n");
   fprintf(out, "@PJL SET LOGINUSER=\"%s\"\n", job->user);
   fprintf(out, "@PJL SET ECONOMODE=OFF\n");
-  fprintf(out, "@PJL SET RENDERMODE=GRAYSCALE\n");
-  fprintf(out, "@PJL SET COLORADAPT=OFF\n");
+  fprintf(out, "@PJL SET RENDERMODE=%s\n", job->render == XL_MONO ? "GRAYSCALE" : "COLOR");
+  fprintf(out, "@PJL SET COLORADAPT=%s\n", job->render == XL_AUTO ? "ON" : "OFF");
   fprintf(out, "@PJL SET LESSPAPERCURL=%s\n", job->less_paper_curl ? "ON" : "OFF");
   fprintf(out, "@PJL SET FIXINTENSITYUP=%s\n", job->fix_intensity ? "ON" : "OFF");
   fprintf(out, "@PJL SET APTMODE=OFF\n");
+  if (job->render != XL_MONO && job->improve_gray)
+    fprintf(out, "@PJL SET IMPROVEGRAY=ON\n");
   fprintf(out, "@PJL SET RESOLUTION=600\n");
   fprintf(out, "@PJL ENTER LANGUAGE=XL2HB\n");
   fprintf(out, ") BROTHER XL2HB;1;0\n");
@@ -325,8 +341,8 @@ int xl_page_begin(xl_writer *w, const xl_page *page) {
   pxl_u16le(f, 23);
   pxl_u16le(f, 0);
   pxl_u16le(f, 3);
-  pxl_u16le(f, 0); /* 0 = mono job */
-  for (unsigned p = 0; p < 4; p++) {
+  pxl_u16le(f, w->job->render == XL_MONO ? 0 : 1);
+  for (unsigned p = 0; p < PLANES; p++) {
     pxl_u16le(f, 1);
     pxl_u16le(f, 5);
     pxl_u16le(f, p);
@@ -339,9 +355,11 @@ int xl_page_begin(xl_writer *w, const xl_page *page) {
   fputc(OP_BeginImage, f);
 
   w->bpl = page->width / 8;
-  w->band.len = 0;
-  w->band_rows = 0;
-  w->prev_len = 0;
+  for (int p = 0; p < PLANES; p++) {
+    w->plane[p].band.len = 0;
+    w->plane[p].rows = 0;
+    w->plane[p].prev_len = 0;
+  }
   return ferror(f) ? -1 : 0;
 }
 
@@ -350,31 +368,32 @@ static void put_u16be(xl_buf *b, unsigned v) {
   xl_buf_byte(b, v & 0xFF);
 }
 
-static int flush_band(xl_writer *w) {
-  if (!w->band_rows)
+static int flush_band(xl_writer *w, int p) {
+  xl_plane_state *ps = &w->plane[p];
+  if (!ps->rows)
     return 0;
   FILE *f = w->out;
-  size_t total = 12 + w->band.len + 4 + 1;
+  size_t total = 12 + ps->band.len + 4 + 1;
   uint8_t hdr[12] = {
-      0x00, 0x04, (uint8_t)(plane_table[0] >> 8), (uint8_t)(plane_table[0] & 0xFF),
+      0x00, 0x04, (uint8_t)(plane_table[p] >> 8), (uint8_t)(plane_table[p] & 0xFF),
       (uint8_t)(w->bpl >> 8), (uint8_t)(w->bpl & 0xFF),
-      (uint8_t)(w->band_rows >> 8), (uint8_t)(w->band_rows & 0xFF),
+      (uint8_t)(ps->rows >> 8), (uint8_t)(ps->rows & 0xFF),
       (uint8_t)(total >> 24), (uint8_t)(total >> 16), (uint8_t)(total >> 8), (uint8_t)total,
   };
-  uint8_t trailer[4] = {(uint8_t)(w->prev_len >> 8), (uint8_t)(w->prev_len & 0xFF), 0, 0};
+  uint8_t trailer[4] = {(uint8_t)(ps->prev_len >> 8), (uint8_t)(ps->prev_len & 0xFF), 0, 0};
   unsigned sum = 0;
   for (size_t i = 0; i < sizeof hdr; i++)
     sum += hdr[i];
-  for (size_t i = 0; i < w->band.len; i++)
-    sum += w->band.data[i];
+  for (size_t i = 0; i < ps->band.len; i++)
+    sum += ps->band.data[i];
   for (size_t i = 0; i < sizeof trailer; i++)
     sum += trailer[i];
   uint8_t check = (uint8_t)(0x100 - (sum & 0xFF));
 
-  pxl_uint16(f, w->band_start, A_StartLine);
-  pxl_uint16(f, w->band_rows, A_BlockHeight);
+  pxl_uint16(f, ps->start, A_StartLine);
+  pxl_uint16(f, ps->rows, A_BlockHeight);
   pxl_ubyte(f, 1, A_CompressMode);
-  pxl_uint16(f, 0, A_CommentData); /* plane 0 = K */
+  pxl_uint16(f, (unsigned)p, A_CommentData);
   fputc(OP_ReadImage, f);
   if (total < 256) {
     fputc(0xFB, f);
@@ -385,54 +404,64 @@ static int flush_band(xl_writer *w) {
     pxl_u16le(f, (total >> 16) & 0xFFFF);
   }
   fwrite(hdr, 1, sizeof hdr, f);
-  fwrite(w->band.data, 1, w->band.len, f);
+  fwrite(ps->band.data, 1, ps->band.len, f);
   fwrite(trailer, 1, sizeof trailer, f);
   fputc(check, f);
 
-  w->band.len = 0;
-  w->band_rows = 0;
-  w->prev_len = 0;
+  ps->band.len = 0;
+  ps->rows = 0;
+  ps->prev_len = 0;
   return ferror(f) ? -1 : 0;
 }
 
-int xl_page_row(xl_writer *w, unsigned y, const uint8_t *row) {
-  int blank = 1;
-  for (unsigned i = 0; i < w->bpl; i++) {
-    if (row[i]) {
-      blank = 0;
-      break;
-    }
-  }
-  /* A band is a run of consecutive non-blank rows. */
-  if (w->band_rows && (blank || y != w->band_start + w->band_rows))
-    if (flush_band(w))
-      return -1;
-  if (blank)
-    return 0;
-  if (w->band_rows && 12 + w->band.len >= BAND_LIMIT)
-    if (flush_band(w))
-      return -1;
-  if (!w->band_rows)
-    w->band_start = y;
+/* Brother handles the planes in the order of its colour tables: C, M, Y, K. */
+static const int plane_order[PLANES] = {PLANE_C, PLANE_M, PLANE_Y, PLANE_K};
 
-  w->line.len = 0;
-  xl_encode_line(row, w->bpl, &w->line);
-  size_t len = w->line.len;
-  put_u16be(&w->band, w->prev_len);
-  put_u16be(&w->band, (unsigned)len);
-  xl_buf_put(&w->band, w->line.data, len);
-  while (len & 3) {
-    xl_buf_byte(&w->band, 0);
-    len++;
+/* Brother writes a band as soon as it ends: at the plane's first blank row
+ * or when it is full. */
+int xl_page_row(xl_writer *w, unsigned y, const uint8_t *const rows[PLANES]) {
+  for (int i = 0; i < PLANES; i++) {
+    int p = plane_order[i];
+    xl_plane_state *ps = &w->plane[p];
+    const uint8_t *row = rows[p];
+    int blank = 1;
+    if (row)
+      for (unsigned i = 0; i < w->bpl; i++)
+        if (row[i]) {
+          blank = 0;
+          break;
+        }
+    if (ps->rows && (blank || y != ps->start + ps->rows))
+      if (flush_band(w, p))
+        return -1;
+    if (blank)
+      continue;
+    if (ps->rows && 12 + ps->band.len >= BAND_LIMIT)
+      if (flush_band(w, p))
+        return -1;
+    if (!ps->rows)
+      ps->start = y;
+
+    w->line.len = 0;
+    xl_encode_line(row, w->bpl, plane_table[p] >> 8, plane_table[p] & 0xFF, &w->line);
+    size_t len = w->line.len;
+    put_u16be(&ps->band, ps->prev_len);
+    put_u16be(&ps->band, (unsigned)len);
+    xl_buf_put(&ps->band, w->line.data, len);
+    while (len & 3) {
+      xl_buf_byte(&ps->band, 0);
+      len++;
+    }
+    ps->prev_len = (unsigned)w->line.len;
+    ps->rows++;
   }
-  w->prev_len = (unsigned)w->line.len;
-  w->band_rows++;
   return 0;
 }
 
 int xl_page_end(xl_writer *w) {
-  if (flush_band(w))
-    return -1;
+  for (int i = 0; i < PLANES; i++)
+    if (flush_band(w, plane_order[i]))
+      return -1;
   FILE *f = w->out;
   fputc(OP_EndImage, f);
   pxl_uint16(f, 1, A_PageCopies);
@@ -450,6 +479,7 @@ int xl_job_end(xl_writer *w) {
 }
 
 void xl_writer_free(xl_writer *w) {
-  xl_buf_free(&w->band);
+  for (int p = 0; p < PLANES; p++)
+    xl_buf_free(&w->plane[p].band);
   xl_buf_free(&w->line);
 }

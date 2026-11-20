@@ -2,17 +2,26 @@
  * rastertohl3070cw: CUPS filter for the Brother HL-3070CW.
  *
  *   rastertohl3070cw job-id user title copies options [file]
+ *   rastertohl3070cw --extract-brother-data DIR
+ *   rastertohl3070cw --version
  *
- * Reads CUPS raster (RGB or grey, 8 bits per channel) and writes Brother's
- * XL2HB printer language. Step one of the project: Mono printing at 600 dpi,
- * byte-identical to Brother's own filter. Colour and the "Fine" mode follow.
+ * Reads CUPS raster (RGB or grey, 8 bits per channel, 600 dpi) and writes
+ * Brother's XL2HB printer language. Mono output is byte-identical to Brother's
+ * own filter; colour uses Brother's colour tables and dither tiles with an
+ * interpolation fitted to Brother's output (see docs/FORMAT.md).
+ *
+ * The halftone tiles, colour tables and ICC profiles are Brother's data. They
+ * are read from the driver's data folder (filled from Brother's installed
+ * driver by --extract-brother-data) or straight from Brother's installation.
  *
  * Options are taken from the job's options (argv[5]) first and otherwise
  * from the page header, where this driver's PPD puts them:
  *   cupsInteger1  TonerSaveMode    0 OFF, 1 ON
  *   cupsInteger2  BRImproveOutput  0 OFF, 1 BRLessPaperCurl, 2 BRFixIntensity
  *   cupsInteger3  BRMonoColor      0 Auto, 1 FullColor, 2 Mono
- *   cupsInteger4  BRResolution     0 600dpi, 1 600x2400dpi
+ *   cupsInteger4  BRResolution     0 600dpi, 1 600x2400dpi (not supported yet: 600)
+ *   cupsInteger5  BRColorMatching  0 Normal, 1 Vivid, 2 None
+ *   cupsInteger6  BRGray           0 or 1 ON, 2 OFF
  *
  * SPDX-License-Identifier: MIT
  */
@@ -27,14 +36,22 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
+#include "color.h"
 #include "halftone.h"
 #include "xl2hb.h"
 
 #ifndef DRIVER_VERSION
-#define DRIVER_VERSION "0.1.0-dev"
+#define DRIVER_VERSION "0.2.0-dev"
 #endif
+
+/* Where this driver keeps its copy of Brother's data, and where Brother's
+ * own driver package puts the originals. */
+#define DRIVER_DATA_DIR "/Library/Printers/HL3070CW-Native/data"
+#define BROTHER_FILTER "/Library/Printers/Brother/Filter/rastertobrother3040.bundle/Contents/MacOS/rastertobrother3040"
+#define BROTHER_PROFILES_DIR "/Library/Printers/Brother/Profiles"
 
 static volatile sig_atomic_t g_cancelled;
 
@@ -112,6 +129,8 @@ typedef struct {
   int improve;    /* 0 off, 1 less paper curl, 2 fix intensity */
   int color_mode; /* 0 auto, 1 colour, 2 mono */
   int fine;
+  int matching;   /* 0 normal, 1 vivid, 2 none */
+  int improve_gray;
   const char *input_slot;
   const char *media_type;
 } job_options;
@@ -125,19 +144,116 @@ static int opt_choice(const char *v, const char *const *names, int n, int fallba
   return fallback;
 }
 
+static int header_int(const cups_page_header2_t *h, int i, int max) {
+  return h->cupsInteger[i] <= (unsigned)max ? (int)h->cupsInteger[i] : 0;
+}
+
 static void resolve_options(job_options *o, int num, cups_option_t *opts, const cups_page_header2_t *h) {
   static const char *const onoff[] = {"OFF", "ON"};
   static const char *const improve[] = {"OFF", "BRLessPaperCurl", "BRFixIntensity"};
   static const char *const color[] = {"Auto", "FullColor", "Mono"};
   static const char *const res[] = {"600dpi", "600x2400dpi"};
+  static const char *const match[] = {"Normal", "Vivid", "None"};
   o->toner_save = opt_choice(cupsGetOption("TonerSaveMode", num, opts), onoff, 2, h->cupsInteger[1] == 1);
-  o->improve = opt_choice(cupsGetOption("BRImproveOutput", num, opts), improve, 3,
-                          h->cupsInteger[2] <= 2 ? (int)h->cupsInteger[2] : 0);
-  o->color_mode = opt_choice(cupsGetOption("BRMonoColor", num, opts), color, 3,
-                             h->cupsInteger[3] <= 2 ? (int)h->cupsInteger[3] : 0);
+  o->improve = opt_choice(cupsGetOption("BRImproveOutput", num, opts), improve, 3, header_int(h, 2, 2));
+  o->color_mode = opt_choice(cupsGetOption("BRMonoColor", num, opts), color, 3, header_int(h, 3, 2));
   o->fine = opt_choice(cupsGetOption("BRResolution", num, opts), res, 2, h->cupsInteger[4] == 1);
+  o->matching = opt_choice(cupsGetOption("BRColorMatching", num, opts), match, 3, header_int(h, 5, 2));
+  o->improve_gray = opt_choice(cupsGetOption("BRGray", num, opts), onoff, 2, h->cupsInteger[6] != 2);
   o->input_slot = cupsGetOption("InputSlot", num, opts);
   o->media_type = cupsGetOption("MediaType", num, opts);
+}
+
+/* ---- Brother data ------------------------------------------------------------- */
+
+static const char *data_dir(void) {
+  const char *d = getenv("HL3070CW_DATA");
+  return d && *d ? d : DRIVER_DATA_DIR;
+}
+
+static int load_cache(brcd_cache *c, char plane, int toner_save) {
+  char name[64], path[1024];
+  snprintf(name, sizeof name, "0600-%c%s_cache08.bin", plane, toner_save ? "-TS" : "");
+  snprintf(path, sizeof path, "%s/%s", data_dir(), name);
+  if (access(path, R_OK) != 0)
+    snprintf(path, sizeof path, "%s%s", BROTHER_LUT_DIR, name);
+  return brcd_load(c, path);
+}
+
+static int load_table(color_table *t, int matching, int improve_gray) {
+  char path[1024];
+  snprintf(path, sizeof path, "%s/%s", data_dir(), color_table_file((color_matching)matching, improve_gray));
+  if (color_table_load(t, path) == 0)
+    return 0;
+  if (color_table_from_brother(t, BROTHER_FILTER, (color_matching)matching, improve_gray) == 0)
+    return 0;
+  fprintf(stderr, "ERROR: Brother's colour tables not found (in %s or Brother's driver). "
+                  "Install Brother's HL-3070CW driver, or use the PostScript version of this driver\n",
+          data_dir());
+  return -1;
+}
+
+static int copy_file(const char *src, const char *dst) {
+  FILE *in = fopen(src, "rb");
+  if (!in)
+    return -1;
+  FILE *out = fopen(dst, "wb");
+  if (!out) {
+    fclose(in);
+    return -1;
+  }
+  char buf[1 << 15];
+  size_t n;
+  int ok = 1;
+  while ((n = fread(buf, 1, sizeof buf, in)) > 0)
+    if (fwrite(buf, 1, n, out) != n)
+      ok = 0;
+  ok = ok && !ferror(in);
+  fclose(in);
+  if (fclose(out))
+    ok = 0;
+  return ok ? 0 : -1;
+}
+
+/* Copy what the driver needs out of Brother's installed driver package. */
+static int extract_brother_data(const char *dir) {
+  char path[1024], dst[1024];
+  if (mkdir(dir, 0755) && errno != EEXIST) {
+    fprintf(stderr, "cannot create %s: %s\n", dir, strerror(errno));
+    return 1;
+  }
+  int failed = 0;
+  static const char planes[] = "kcmy";
+  for (int p = 0; p < 4; p++)
+    for (int ts = 0; ts < 2; ts++) {
+      char name[64];
+      snprintf(name, sizeof name, "0600-%c%s_cache08.bin", planes[p], ts ? "-TS" : "");
+      snprintf(path, sizeof path, "%s%s", BROTHER_LUT_DIR, name);
+      snprintf(dst, sizeof dst, "%s/%s", dir, name);
+      if (copy_file(path, dst)) {
+        fprintf(stderr, "cannot copy %s: %s\n", path, strerror(errno));
+        failed = 1;
+      }
+    }
+  if (color_tables_extract(BROTHER_FILTER, dir))
+    failed = 1;
+  /* ICC profiles for macOS's colour matching (named in the PPD) */
+  snprintf(path, sizeof path, "%s/profiles", dir);
+  if (mkdir(path, 0755) && errno != EEXIST)
+    failed = 1;
+  static const char *const profiles[] = {"broch08_PL_NM.icm", "broch08_PL_NM_IG_ON.icm", "broch08_PL_VV.icm",
+                                         "broch08_PL_VV_IG_ON.icm", "broch08_PL_Fi.icm", "broch08_PL_Fi_IG_ON.icm"};
+  for (size_t i = 0; i < sizeof profiles / sizeof profiles[0]; i++) {
+    snprintf(path, sizeof path, "%s/%s", BROTHER_PROFILES_DIR, profiles[i]);
+    snprintf(dst, sizeof dst, "%s/profiles/%s", dir, profiles[i]);
+    if (access(path, R_OK) == 0 && copy_file(path, dst)) {
+      fprintf(stderr, "cannot copy %s\n", path);
+      failed = 1;
+    }
+  }
+  if (!failed)
+    printf("Brother's data copied to %s\n", dir);
+  return failed;
 }
 
 /* PJL strings are quoted; keep them to 80 bytes of printable text. */
@@ -162,8 +278,12 @@ int main(int argc, char *argv[]) {
     printf("rastertohl3070cw %s\n", DRIVER_VERSION);
     return 0;
   }
+  if (argc == 3 && !strcmp(argv[1], "--extract-brother-data"))
+    return extract_brother_data(argv[2]);
   if (argc < 6 || argc > 7) {
-    fputs("Usage: rastertohl3070cw job-id user title copies options [file]\n", stderr);
+    fputs("Usage: rastertohl3070cw job-id user title copies options [file]\n"
+          "       rastertohl3070cw --extract-brother-data DIR\n",
+          stderr);
     return 1;
   }
   int fd = 0;
@@ -198,26 +318,35 @@ int main(int argc, char *argv[]) {
   cups_raster_t *ras = cupsRasterOpen(fd, CUPS_RASTER_READ);
   cups_page_header2_t h;
   xl_writer w;
-  brcd_cache cache = {0};
-  uint8_t *in = NULL, *bits = NULL;
-  int page = 0, status = 0, started = 0;
+  brcd_cache cache[4];
+  memset(cache, 0, sizeof cache);
+  color_table *table = NULL;
+  uint8_t *in = NULL, *conv = NULL, *bits[4] = {NULL, NULL, NULL, NULL};
+  int page = 0, status = 0, started = 0, colour = 0;
   job_options o;
 
   while (!g_cancelled && cupsRasterReadHeader2(ras, &h)) {
     page++;
     if (!started) {
       resolve_options(&o, num_opts, opts, &h);
-      if (o.color_mode != 2)
-        fputs("INFO: Colour is not supported yet, printing in Mono\n", stderr);
       if (o.fine)
         fputs("INFO: Fine (2400 dpi class) is not supported yet, printing at 600 dpi\n", stderr);
-      job.toner_save = o.toner_save;
+      colour = o.color_mode != 2;
+      job.render = o.color_mode == 2 ? XL_MONO : o.color_mode == 1 ? XL_COLOR : XL_AUTO;
+      job.improve_gray = o.improve_gray;
       job.less_paper_curl = o.improve == 1;
       job.fix_intensity = o.improve == 2;
-      const char *file = o.toner_save ? BROTHER_LUT_DIR "0600-k-TS_cache08.bin" : BROTHER_LUT_DIR "0600-k_cache08.bin";
-      if (brcd_load(&cache, file)) {
+      if (load_cache(&cache[0], 'k', o.toner_save)) {
         status = 1;
         break;
+      }
+      if (colour) {
+        table = malloc(sizeof *table);
+        if (!table || load_cache(&cache[1], 'c', o.toner_save) || load_cache(&cache[2], 'm', o.toner_save) ||
+            load_cache(&cache[3], 'y', o.toner_save) || load_table(table, o.matching, o.improve_gray)) {
+          status = 1;
+          break;
+        }
       }
       if (xl_job_begin(&w, stdout, &job)) {
         status = 1;
@@ -265,10 +394,16 @@ int main(int argc, char *argv[]) {
     }
 
     free(in);
-    free(bits);
+    free(conv);
+    conv = NULL;
+    for (int p = 0; p < 4; p++) {
+      free(bits[p]);
+      bits[p] = malloc(pg.width / 8);
+    }
     in = malloc(h.cupsBytesPerLine);
-    bits = malloc(pg.width / 8);
-    if (!in || !bits) {
+    if (grey)
+      conv = malloc((size_t)h.cupsWidth * 3);
+    if (!in || !bits[0] || !bits[1] || !bits[2] || !bits[3] || (grey && !conv)) {
       fputs("ERROR: out of memory\n", stderr);
       status = 1;
       break;
@@ -278,10 +413,6 @@ int main(int argc, char *argv[]) {
       status = 1;
       break;
     }
-    uint8_t *rgbrow = in;
-    uint8_t *conv = NULL;
-    if (grey)
-      conv = malloc((size_t)h.cupsWidth * 3);
     for (unsigned y = 0; y < h.cupsHeight; y++) {
       if (g_cancelled)
         break;
@@ -292,20 +423,27 @@ int main(int argc, char *argv[]) {
       }
       if (y >= height)
         continue;
+      const uint8_t *rgbrow = in;
       if (grey) {
-        for (unsigned x = 0; x < h.cupsWidth; x++) {
-          uint8_t v = h.cupsColorSpace == CUPS_CSPACE_W || h.cupsColorSpace == CUPS_CSPACE_SW ? in[x] : 0;
-          conv[3 * x] = conv[3 * x + 1] = conv[3 * x + 2] = v;
-        }
+        for (unsigned x = 0; x < h.cupsWidth; x++)
+          conv[3 * x] = conv[3 * x + 1] = conv[3 * x + 2] = in[x];
         rgbrow = conv;
       }
-      mono_row(&cache, rgbrow, h.cupsWidth, y, bits, pg.width / 8);
-      if (xl_page_row(&w, y, bits)) {
+      const uint8_t *rows[4] = {NULL, NULL, NULL, NULL};
+      if (colour) {
+        int any[4];
+        color_row(table, cache, rgbrow, h.cupsWidth, y, bits, pg.width / 8, any);
+        for (int p = 0; p < 4; p++)
+          rows[p] = any[p] ? bits[p] : NULL;
+      } else {
+        mono_row(&cache[0], rgbrow, h.cupsWidth, y, bits[0], pg.width / 8);
+        rows[0] = bits[0];
+      }
+      if (xl_page_row(&w, y, rows)) {
         status = 1;
         break;
       }
     }
-    free(conv);
     if (xl_page_end(&w))
       status = 1;
     fprintf(stderr, "PAGE: %d 1\n", page);
@@ -320,9 +458,13 @@ int main(int argc, char *argv[]) {
   } else if (!status) {
     fputs("ERROR: no pages in the job\n", stderr);
   }
-  brcd_free(&cache);
+  for (int p = 0; p < 4; p++) {
+    brcd_free(&cache[p]);
+    free(bits[p]);
+  }
+  free(table);
   free(in);
-  free(bits);
+  free(conv);
   cupsRasterClose(ras);
   cupsFreeOptions(num_opts, opts);
   if (fd)

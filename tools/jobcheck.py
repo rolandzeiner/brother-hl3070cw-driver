@@ -142,6 +142,28 @@ def cases():
         yield f"size {size}", size, [page_dot(size)], f"BRMonoColor=Mono PageSize={size}", {}
     yield "3 pages", "A6", [page_dot("A6"), page_random_bw("A6", seed=3, nrows=50), page_dot("A6")], "BRMonoColor=Mono", {}
     yield "title and user", "A6", [page_dot("A6")], "BRMonoColor=Mono", {"_title": "Quarterly report 2026 (final).pdf", "_user": "roland"}
+    # colour: colours on the edges of Brother's colour-table cells, where the
+    # fitted interpolation is exact (see tools/colorcheck.py for the rest)
+    crng = random.Random(8)
+
+    def edge_colours(n):
+        out = []
+        while len(out) < n:
+            ch = crng.randrange(3)
+            c = [255 if k == 16 else 16 * k for k in (crng.randrange(17) for _ in range(3))]
+            c[ch] = crng.randrange(256)
+            if not (c[0] == c[1] == c[2]):
+                out.append(tuple(c))
+        return out
+
+    yield "colour edge colours", "A6", [page_patches("A6", edge_colours(1100))], "BRMonoColor=FullColor", {}
+    yield "colour Vivid", "A6", [page_patches("A6", edge_colours(400))], "BRMonoColor=FullColor BRColorMatching=Vivid", {}
+    yield "colour None, Improve Gray off", "A6", [page_patches("A6", edge_colours(400))], "BRMonoColor=FullColor BRColorMatching=None BRGray=OFF", {}
+    yield "colour Toner Save", "A6", [page_patches("A6", edge_colours(400))], "BRMonoColor=FullColor TonerSaveMode=ON", {}
+    yield "colour Auto", "A6", [page_patches("A6", edge_colours(400))], "BRMonoColor=Auto", {}
+    yield "colour greys", "A6", [page_patches("A6", [(g, g, g) for g in range(256)])], "BRMonoColor=FullColor", {}
+    yield "colour black content", "A6", [page_random_bw("A6", seed=4)], "BRMonoColor=FullColor", {}
+    yield "colour 2 pages A4", "A4", [page_patches("A4", edge_colours(300)), page_random_bw("A4", seed=5, nrows=80)], "BRMonoColor=FullColor PageSize=A4", {}
 
 
 def main() -> int:

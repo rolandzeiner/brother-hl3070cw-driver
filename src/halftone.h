@@ -10,6 +10,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "color.h"
+
 /* Where Brother's driver package installs its halftone data. */
 #define BROTHER_LUT_DIR "/Library/Printers/Brother/Brother LUT/"
 
@@ -29,5 +31,11 @@ void brcd_free(brcd_cache *c);
  * out_bytes bytes; pixels beyond width are left 0. */
 void mono_row(const brcd_cache *c, const uint8_t *rgb, unsigned width, unsigned y, uint8_t *out,
               size_t out_bytes);
+
+/* Convert one RGB row to 1-bit K, C, M, Y rows (out[p], out_bytes each) with
+ * Brother's colour table and each plane's dither tiles. any[p] is set when
+ * plane p has at least one dot. */
+void color_row(const color_table *t, const brcd_cache caches[4], const uint8_t *rgb, unsigned width,
+               unsigned y, uint8_t *const out[4], size_t out_bytes, int any[4]);
 
 #endif

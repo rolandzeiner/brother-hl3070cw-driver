@@ -106,3 +106,35 @@ void mono_row(const brcd_cache *c, const uint8_t *rgb, unsigned width, unsigned 
       tx = 0;
   }
 }
+
+void color_row(const color_table *t, const brcd_cache caches[4], const uint8_t *rgb, unsigned width,
+               unsigned y, uint8_t *const out[4], size_t out_bytes, int any[4]) {
+  const uint8_t *rows[4];
+  unsigned tx[4];
+  for (int p = 0; p < 4; p++) {
+    memset(out[p], 0, out_bytes);
+    any[p] = 0;
+    rows[p] = caches[p].body + (size_t)(y % caches[p].h) * caches[p].stride;
+    tx[p] = 0;
+  }
+  uint8_t last_rgb[3] = {255, 255, 255};
+  uint8_t lv[4] = {0, 0, 0, 0}; /* white: no toner */
+  for (unsigned x = 0; x < width; x++, rgb += 3) {
+    if (rgb[0] != last_rgb[0] || rgb[1] != last_rgb[1] || rgb[2] != last_rgb[2]) {
+      if (rgb[0] == 255 && rgb[1] == 255 && rgb[2] == 255)
+        memset(lv, 0, sizeof lv);
+      else
+        color_convert(t, rgb, lv);
+      memcpy(last_rgb, rgb, 3);
+    }
+    for (int p = 0; p < 4; p++) {
+      unsigned px = tx[p];
+      if (lv[p] && ((rows[p][lv[p] * caches[p].tile + (px >> 3)] >> (7 - (px & 7))) & 1u)) {
+        out[p][x >> 3] |= (uint8_t)(0x80u >> (x & 7));
+        any[p] = 1;
+      }
+      if (++tx[p] == caches[p].w)
+        tx[p] = 0;
+    }
+  }
+}

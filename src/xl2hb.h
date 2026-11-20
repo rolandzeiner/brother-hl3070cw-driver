@@ -24,9 +24,13 @@ void xl_buf_free(xl_buf *b);
 void xl_buf_put(xl_buf *b, const void *p, size_t n);
 void xl_buf_byte(xl_buf *b, unsigned v);
 
-/* Encode one line of 1-bit pixels (MSB first, bpl bytes) with method 2 and
- * 12-pixel units, appending the result to out. Matches Brother's encoder. */
-void xl_encode_line(const uint8_t *row, size_t bpl, xl_buf *out);
+/* Planes in the order Brother numbers them. */
+enum { PLANE_K = 0, PLANE_C = 1, PLANE_M = 2, PLANE_Y = 3, PLANES = 4 };
+
+/* Encode one line of 1-bit pixels (MSB first, bpl bytes) with the given
+ * compression method (2 or 4) and unit width in pixels, appending to out.
+ * Matches Brother's encoder. */
+void xl_encode_line(const uint8_t *row, size_t bpl, int method, int unit, xl_buf *out);
 
 /* Media description for BeginPage. */
 typedef enum { XL_SIZE_ENUM, XL_SIZE_NAME, XL_SIZE_CUSTOM } xl_size_kind;
@@ -39,11 +43,14 @@ typedef struct {
   unsigned custom_h;     /* XL_SIZE_CUSTOM: height in 0.1 mm */
 } xl_media_size;
 
+typedef enum { XL_MONO = 0, XL_COLOR = 1, XL_AUTO = 2 } xl_render;
+
 typedef struct {
   const char *title;     /* job name, already cleaned */
   const char *user;      /* user name, already cleaned */
   time_t when;           /* job time, written in UTC */
-  int toner_save;        /* reserved: Brother keeps ECONOMODE=OFF either way */
+  xl_render render;      /* Mono, colour, or colour with printer-side auto detection */
+  int improve_gray;      /* colour jobs: BRGray=ON */
   int less_paper_curl;   /* BRImproveOutput=BRLessPaperCurl */
   int fix_intensity;     /* BRImproveOutput=BRFixIntensity */
 } xl_job;
@@ -56,25 +63,28 @@ typedef struct {
   unsigned height;       /* SourceHeight in pixels */
 } xl_page;
 
+typedef struct {
+  xl_buf band;           /* line records */
+  unsigned start;
+  unsigned rows;
+  unsigned prev_len;
+} xl_plane_state;
+
 /* Streaming job writer. All output goes to the FILE given to xl_job_begin. */
 typedef struct {
   FILE *out;
   const xl_job *job;
-  /* current page */
   unsigned bpl;
-  /* current band */
-  xl_buf band;           /* line records */
+  xl_plane_state plane[PLANES];
   xl_buf line;           /* scratch for one encoded line */
-  unsigned band_start;
-  unsigned band_rows;
-  unsigned prev_len;
 } xl_writer;
 
 int xl_job_begin(xl_writer *w, FILE *out, const xl_job *job);
 int xl_page_begin(xl_writer *w, const xl_page *page);
-/* Add row y of the current page (bpl bytes of 1-bit K pixels). Rows must
- * come in order; blank rows may be skipped or passed in. */
-int xl_page_row(xl_writer *w, unsigned y, const uint8_t *row);
+/* Add row y of the current page: rows[p] holds bpl bytes of 1-bit pixels for
+ * plane p, or NULL when the plane is blank in this row. Rows must come in
+ * order; every row of the page should be passed. */
+int xl_page_row(xl_writer *w, unsigned y, const uint8_t *const rows[PLANES]);
 int xl_page_end(xl_writer *w);
 int xl_job_end(xl_writer *w);
 void xl_writer_free(xl_writer *w);
