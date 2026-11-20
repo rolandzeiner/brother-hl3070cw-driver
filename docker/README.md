@@ -82,7 +82,8 @@ To see the printer and its jobs, cancel jobs or pause the printer in a browser, 
 with a login in front of CUPS (for example Traefik with Authelia) and set `WEB_FROM` to the address
 the proxy connects from. Only that address gets the administration, and it needs no CUPS login
 there, so the proxy must not let anyone through without logging in. Clients in `ALLOW_FROM` can
-print and read the status pages, but not change anything.
+print, read the status pages and cancel a job (any job, as with the printer's Cancel button), but
+not change anything else.
 
 The image gives the web interface a look of its own (`docker/web/`) in every language CUPS ships:
 a start page, light and dark mode, a layout that works on a phone. The server settings on the

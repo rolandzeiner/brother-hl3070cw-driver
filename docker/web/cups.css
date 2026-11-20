@@ -416,6 +416,13 @@ table.list tr:has(input[name="OP"][value="release-job"]) td:first-child {
   padding-left: 0.85rem;
 }
 
+/* Release and Move need the job owner's name, which the web interface does not
+   send (docker/entrypoint.sh): only Cancel works here */
+table.list form:has(input[name="OP"][value="release-job"]),
+table.list form:has(input[name="OP"][value="move-job"]) {
+  display: none;
+}
+
 /* the job controls: buttons in a row, without the stray colons CUPS puts between */
 table.list td:last-child:has(form) {
   font-size: 0;

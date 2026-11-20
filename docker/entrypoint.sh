@@ -181,8 +181,12 @@ configure_cups() {
             '    Order deny,allow' \
             '  </Limit>' \
             '  <Limit Cancel-Job CUPS-Authenticate-Job>' \
+            '    AuthType Default' \
             '    Require user @OWNER @SYSTEM'
-        trusted_web "$web"
+        # whoever may print may cancel any job, as with the printer's Cancel
+        # button: the web interface asks CUPS under a name that is not the
+        # job owner's, so an owner-only rule makes its Cancel fail
+        trusted_web "$allow${web:+ $web}"
         printf '%s\n' \
             '  </Limit>' \
             '  <Limit CUPS-Add-Modify-Printer Set-Printer-Attributes CUPS-Delete-Printer CUPS-Add-Modify-Class CUPS-Delete-Class CUPS-Set-Default CUPS-Get-Devices Pause-Printer Resume-Printer Enable-Printer Disable-Printer Pause-Printer-After-Current-Job Hold-New-Jobs Release-Held-New-Jobs Deactivate-Printer Activate-Printer Restart-Printer Shutdown-Printer Startup-Printer Promote-Job Schedule-Job-After Cancel-Jobs CUPS-Accept-Jobs CUPS-Reject-Jobs>' \
