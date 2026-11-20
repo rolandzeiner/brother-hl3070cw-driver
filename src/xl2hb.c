@@ -150,7 +150,7 @@ void xl_encode_line(const uint8_t *row, size_t bpl, int method, int unit, xl_buf
     uint32_t v = 0;
     for (unsigned b = 0; b < e.unit; b++) {
       size_t pos = k * e.unit + b;
-      unsigned bit = pos < nbits ? (row[pos >> 3] >> (7 - (pos & 7))) & 1u : 0u;
+      unsigned bit = pos < nbits ? ((unsigned)row[pos >> 3] >> (7 - (pos & 7))) & 1u : 0u;
       v = (v << 1) | bit;
     }
     u[k] = v;
@@ -464,7 +464,7 @@ int xl_page_row(xl_writer *w, unsigned y, const uint8_t *const rows[PLANES]) {
     if (w->job->fine)
       xl_fine_encode_line(row, w->bpl, &w->line);
     else
-      xl_encode_line(row, w->bpl, plane_table[p] >> 8, plane_table[p] & 0xFF, &w->line);
+      xl_encode_line(row, w->bpl, (int)(plane_table[p] >> 8), (int)(plane_table[p] & 0xFF), &w->line);
     size_t len = w->line.len;
     put_u16be(&ps->band, ps->prev_len);
     put_u16be(&ps->band, (unsigned)len);

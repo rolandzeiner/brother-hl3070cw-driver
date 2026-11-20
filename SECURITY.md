@@ -13,7 +13,8 @@ one, a file that shows the problem.
   who can print may send, so crashes, memory errors, very large memory use or hangs caused by a
   print job count as security problems.
 - `rastertohl3070cw --extract-brother-data`, which the installer runs as root.
-- `install.sh`, `uninstall.sh` and the installer package, which run with administrator rights.
+- `install.sh`, `install-linux.sh`, `uninstall.sh` and the installer package, which run with
+  administrator rights.
 
 The Python tools in `tools/` are for development only and are not installed.
 

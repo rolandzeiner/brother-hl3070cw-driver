@@ -2,7 +2,7 @@
  * rastertohl3070cw: CUPS filter for the Brother HL-3070CW.
  *
  *   rastertohl3070cw job-id user title copies options [file]
- *   rastertohl3070cw --extract-brother-data DIR
+ *   rastertohl3070cw --extract-brother-data DIR [ROOT]
  *   rastertohl3070cw --version
  *
  * Reads CUPS raster (RGB or grey, 8 bits per channel, 600 dpi) and writes
@@ -36,6 +36,7 @@
 #include <cups/raster.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <math.h>
 #include <signal.h>
 #include <stdint.h>
@@ -56,12 +57,26 @@
 #endif
 
 /* Where this driver keeps its copy of Brother's data, and where Brother's
- * own driver package puts the originals. */
+ * own driver package puts the originals: its macOS driver, or on Linux its
+ * LPR driver for the HL-3070CW (the colour tables are inside its filter
+ * program, as on macOS). Only the macOS driver has ICC profiles; macOS's
+ * colour matching uses them before this filter. */
+#ifdef __APPLE__
+#ifndef DRIVER_DATA_DIR
 #define DRIVER_DATA_DIR "/Library/Printers/HL3070CW-Native/data"
+#endif
 #ifndef BROTHER_FILTER
 #define BROTHER_FILTER "/Library/Printers/Brother/Filter/rastertobrother3040.bundle/Contents/MacOS/rastertobrother3040"
 #endif
 #define BROTHER_PROFILES_DIR "/Library/Printers/Brother/Profiles"
+#else
+#ifndef DRIVER_DATA_DIR
+#define DRIVER_DATA_DIR "/usr/share/hl3070cw-native/data"
+#endif
+#ifndef BROTHER_FILTER
+#define BROTHER_FILTER "/opt/brother/Printers/hl3070cw/lpd/brhl3070cwfilter"
+#endif
+#endif
 
 /* The largest page the printer takes, in pixels at 600 dpi with no margins
  * taken off: 624 pt wide (DL Long Edge, the widest size) and 1152 pt long
@@ -289,12 +304,35 @@ static int have_fine_data(int toner_save, int colour, int matching, int improve_
   return access(path, R_OK) == 0 || access(BROTHER_FILTER, R_OK) == 0;
 }
 
-/* Copy what the driver needs out of Brother's installed driver package.
+/* root + path of one of Brother's files, refused unless it really lies inside
+ * root: a symlink in an unpacked package must not lead elsewhere. */
+static int brother_path(char *buf, size_t cap, const char *root, const char *path, const char *name) {
+  char joined[1024], real[PATH_MAX], real_root[PATH_MAX];
+  if (path_join(joined, sizeof joined, root, path, name))
+    return -1;
+  if (!*root) { /* Brother's installed driver */
+    snprintf(buf, cap, "%s", joined);
+    return 0;
+  }
+  if (!realpath(root, real_root) || !realpath(joined, real)) {
+    fprintf(stderr, "cannot find %s: %s\n", joined, strerror(errno));
+    return -1;
+  }
+  size_t n = strlen(real_root);
+  if (strncmp(real, real_root, n) != 0 || (real[n] != '/' && strcmp(real_root, "/") != 0)) {
+    fprintf(stderr, "%s leads outside %s; refusing it\n", joined, root);
+    return -1;
+  }
+  return path_join(buf, cap, real, "", "");
+}
+
+/* Copy what the driver needs out of Brother's driver package: the installed
+ * one, or one unpacked under root (Linux: Brother's LPR driver package).
  * Runs as root from the installer: see src/fsutil.c for the safeguards. */
-static int extract_brother_data(const char *dir) {
-  umask(022); /* the files must stay readable for CUPS (_lp) */
-  char sub[1024], path[1024];
-  if (fs_prepare_dir(dir) || path_join(sub, sizeof sub, dir, "/", "profiles") || fs_prepare_dir(sub))
+static int extract_brother_data(const char *dir, const char *root) {
+  umask(022); /* the files must stay readable for CUPS (lp) */
+  char path[1024];
+  if (fs_prepare_dir(dir))
     return 1;
   /* The 600 dpi files are needed; without the Fine ones the driver still
    * works and prints Fine jobs in Normal quality. */
@@ -305,26 +343,31 @@ static int extract_brother_data(const char *dir) {
       for (int ts = 0; ts < 2; ts++) {
         char name[64];
         snprintf(name, sizeof name, "%s-%c%s_cache08.bin", fine ? "capt" : "0600", planes[p], ts ? "-TS" : "");
-        if (path_join(path, sizeof path, BROTHER_LUT_DIR, "", name) || fs_copy_file(path, dir, name, "BRCD", 0)) {
+        if (brother_path(path, sizeof path, root, BROTHER_LUT_DIR, name) || fs_copy_file(path, dir, name, "BRCD", 0)) {
           if (fine)
             fine_missing = 1;
           else
             failed = 1;
         }
       }
-  if (color_tables_extract(BROTHER_FILTER, dir))
+  if (brother_path(path, sizeof path, root, BROTHER_FILTER, "") || color_tables_extract(path, dir))
     failed = 1;
+#ifdef BROTHER_PROFILES_DIR
   /* ICC profiles for macOS's colour matching (named in the PPD): Normal, then Fine */
+  char sub[1024];
+  if (path_join(sub, sizeof sub, dir, "/", "profiles") || fs_prepare_dir(sub))
+    return 1;
   static const char *const profiles[] = {"broch08_PL_NM.icm", "broch08_PL_NM_IG_ON.icm", "broch08_PL_Fi.icm",
                                          "broch08_PL_Fi_IG_ON.icm"};
   for (size_t i = 0; i < sizeof profiles / sizeof profiles[0]; i++)
-    if (path_join(path, sizeof path, BROTHER_PROFILES_DIR, "/", profiles[i]) ||
+    if (brother_path(path, sizeof path, root, BROTHER_PROFILES_DIR "/", profiles[i]) ||
         fs_copy_file(path, sub, profiles[i], "acsp", 36)) { /* the ICC profile signature */
       if (i >= 2)
         fine_missing = 1;
       else
         failed = 1;
     }
+#endif
   if (!failed)
     printf("Brother's data copied to %s\n", dir);
   if (!failed && fine_missing)
@@ -359,11 +402,11 @@ int main(int argc, char *argv[]) {
     printf("rastertohl3070cw %s\n", DRIVER_VERSION);
     return 0;
   }
-  if (argc == 3 && !strcmp(argv[1], "--extract-brother-data"))
-    return extract_brother_data(argv[2]);
+  if ((argc == 3 || argc == 4) && !strcmp(argv[1], "--extract-brother-data"))
+    return extract_brother_data(argv[2], argc == 4 ? argv[3] : "");
   if (argc < 6 || argc > 7) {
     fputs("Usage: rastertohl3070cw job-id user title copies options [file]\n"
-          "       rastertohl3070cw --extract-brother-data DIR\n",
+          "       rastertohl3070cw --extract-brother-data DIR [ROOT]\n",
           stderr);
     return 1;
   }

@@ -1,6 +1,7 @@
-# Native CUPS filter for the Brother HL-3070CW.
+# Native CUPS filter for the Brother HL-3070CW, for macOS and Linux.
 #
-#   make            universal binary (arm64 + x86_64) in build/
+#   make            build/rastertohl3070cw: on macOS a universal binary (arm64 +
+#                   x86_64), on Linux for the machine it is built on
 #   make test       byte-for-byte checks against stored reference outputs
 #                   (needs Brother's data files on this Mac)
 #   make check      sanitizer build on made-up data: needs nothing of Brother's
@@ -9,8 +10,7 @@
 #   make pkg        installer package in build/pkg/
 
 VERSION  ?= 0.4.1
-ARCHS    ?= -arch arm64 -arch x86_64
-CC       ?= clang
+OS       := $(shell uname -s)
 # -ffp-contract=off: no fused multiply-add, so the grey conversion rounds
 # exactly like Brother's filter (see src/halftone.c).
 CFLAGS   ?= -O2 -g
@@ -19,7 +19,19 @@ WARN     := -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wf
 # The filter reads print data from any user who may print: stack protectors
 # on every function with a buffer, and no uninitialised stack memory.
 HARDEN   := -fstack-protector-strong -ftrivial-auto-var-init=zero -Werror=format-security
-BASE     := -std=c11 $(WARN) -ffp-contract=off -mmacosx-version-min=11.0 -DDRIVER_VERSION='"$(VERSION)"'
+ifeq ($(OS),Darwin)
+ARCHS    ?= -arch arm64 -arch x86_64
+PLATFORM := -mmacosx-version-min=11.0
+else
+# Linux: POSIX and X/Open names (realpath) from the C library, and Debian's own hardening (fortified
+# libc calls, a position-independent executable, read-only relocations)
+ARCHS    ?=
+PLATFORM := -D_XOPEN_SOURCE=700
+HARDEN   += -D_FORTIFY_SOURCE=3 -fPIE
+LDFLAGS  += -pie -Wl,-z,relro,-z,now
+LDLIBS   += -lm
+endif
+BASE     := -std=c11 $(WARN) -ffp-contract=off $(PLATFORM) -DDRIVER_VERSION='"$(VERSION)"'
 CFLAGS   += $(ARCHS) $(BASE) $(HARDEN)
 LDLIBS   += -lcups
 
@@ -33,18 +45,23 @@ all: $(BIN)
 
 $(BIN): $(SRC) $(HDR)
 	@mkdir -p build
-	$(CC) $(CFLAGS) -o $@ $(SRC) $(LDLIBS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(SRC) $(LDLIBS)
+ifeq ($(OS),Darwin)
 	# ad-hoc signature (no certificate) with the hardened runtime: no injected libraries, no debugger
 	codesign --force --sign - --options runtime --identifier $(PKG_ID).filter $@
+endif
 
 # Checks without Brother's data: the filter with sanitizers and without
 # Brother's paths, on made-up tiles and tables (tools/selftest.py).
-CHECK_FLAGS := -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer $(BASE) \
+# AddressSanitizer cannot start on Raspberry Pi OS (its kernel has a 39-bit
+# address space); there: make check SANITIZE=undefined. CI runs both.
+SANITIZE    ?= address,undefined
+CHECK_FLAGS := -O1 -g -fsanitize=$(SANITIZE) -fno-sanitize-recover=all -fno-omit-frame-pointer $(BASE) \
                -DBROTHER_LUT_DIR='"/nonexistent/"' -DBROTHER_FILTER='"/nonexistent/filter"' -DHL3070CW_TEST_HOOKS
 
 build/check/rastertohl3070cw: $(SRC) $(HDR)
 	@mkdir -p build/check
-	$(CC) $(CHECK_FLAGS) -o $@ $(SRC) $(LDLIBS)
+	$(CC) $(CHECK_FLAGS) -o $@ $(SRC) $(LDLIBS) $(if $(filter Linux,$(OS)),-lm)
 
 build/check/fine_lines: tests/fine_lines.c src/fine.c src/xl2hb.c $(HDR)
 	@mkdir -p build/check
@@ -57,11 +74,11 @@ check: build/check/rastertohl3070cw build/check/fine_lines
 # tools; without it, the analyzer built into Apple's clang runs alone.
 TIDY     ?= $(firstword $(shell command -v clang-tidy) $(wildcard /opt/homebrew/opt/llvm/bin/clang-tidy) \
             $(wildcard /usr/local/opt/llvm/bin/clang-tidy))
-SCRIPTS  := install.sh uninstall.sh packaging/postinstall
+SCRIPTS  := install.sh install-linux.sh uninstall.sh packaging/postinstall
 
 lint:
 ifneq ($(TIDY),)
-	$(TIDY) --quiet --warnings-as-errors='*' $(SRC) tests/fine_lines.c -- $(BASE) -isysroot $$(xcrun --show-sdk-path)
+	$(TIDY) --quiet --warnings-as-errors='*' $(SRC) tests/fine_lines.c -- $(BASE) $(if $(filter Darwin,$(OS)),-isysroot $$(xcrun --show-sdk-path))
 else
 	for f in $(SRC) tests/fine_lines.c; do \
 	  $(CC) --analyze -Xclang -analyzer-output=text -Xclang -analyzer-werror $(BASE) -o /dev/null $$f || exit 1; done
@@ -69,7 +86,8 @@ endif
 	shellcheck $(SCRIPTS)
 	for s in $(SCRIPTS); do /bin/bash -n $$s || exit 1; done
 	# filters, profiles: the PPD names files of an installed driver, which a build machine has not got
-	cupstestppd -W filters -W profiles -W translations ppd/hl3070cw-native.ppd ppd/hl3070cw-postscript.ppd
+	cupstestppd -W filters -W profiles -W translations ppd/hl3070cw-native.ppd ppd/hl3070cw-postscript.ppd \
+	  ppd/linux/hl3070cw-native.ppd
 	python3 -I tools/genppd.py --check
 	python3 -I -m compileall -q tools
 

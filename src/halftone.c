@@ -112,7 +112,7 @@ void mono_row(const brcd_cache *c, const uint8_t *rgb, unsigned width, unsigned 
   unsigned tx = 0;
   for (unsigned x = 0; x < width; x++, rgb += 3) {
     unsigned level = mono_level(rgb);
-    if (level && ((tile_row[level * c->tile + (tx >> 3)] >> (7 - (tx & 7))) & 1u))
+    if (level && (((unsigned)tile_row[level * c->tile + (tx >> 3)] >> (7 - (tx & 7))) & 1u))
       out[x >> 3] |= (uint8_t)(0x80u >> (x & 7));
     if (++tx == c->w)
       tx = 0;
@@ -141,7 +141,7 @@ void color_row(const color_table *t, const brcd_cache caches[4], const uint8_t *
     }
     for (int p = 0; p < 4; p++) {
       unsigned px = tx[p];
-      if (lv[p] && ((rows[p][lv[p] * caches[p].tile + (px >> 3)] >> (7 - (px & 7))) & 1u)) {
+      if (lv[p] && (((unsigned)rows[p][lv[p] * caches[p].tile + (px >> 3)] >> (7 - (px & 7))) & 1u)) {
         out[p][x >> 3] |= (uint8_t)(0x80u >> (x & 7));
         any[p] = 1;
       }

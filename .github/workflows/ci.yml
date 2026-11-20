@@ -1,8 +1,8 @@
 name: CI
 
-# Builds the driver and runs everything that needs nothing of Brother's:
-# `make check` (sanitizer build on made-up data), `make lint` and the
-# installer package. `make test` compares with Brother's own output and needs
+# Builds the driver on macOS and Linux and runs everything that needs nothing
+# of Brother's: `make check` (sanitizer build on made-up data), `make lint` and
+# the installer package. `make test` compares with Brother's own output and needs
 # Brother's data files, so it only runs on a Mac that has Brother's driver.
 
 on:
@@ -39,6 +39,40 @@ jobs:
         run: |
           make pkg
           pkgutil --payload-files build/pkg/*.pkg
+
+  linux:
+    name: Linux ${{ matrix.arch }}, build and self-test
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install CUPS headers and shellcheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends libcups2-dev shellcheck
+      - name: Build
+        run: |
+          make
+          build/rastertohl3070cw --version
+      - name: Self-test with sanitizers
+        run: |
+          # Ubuntu 24.04 randomises mmap more than AddressSanitizer allows
+          sudo sysctl -w vm.mmap_rnd_bits=28
+          make check
+      - name: Linux installer
+        run: |
+          bash -n install-linux.sh
+          shellcheck install-linux.sh
 
   lint:
     name: Lint

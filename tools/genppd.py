@@ -2,8 +2,11 @@
 
     python3 -I tools/genppd.py
 
-ppd/hl3070cw-native.ppd      raster driver: this project's filter, Brother quality
-ppd/hl3070cw-postscript.ppd  the printer's own PostScript (BR-Script 3), no filter
+ppd/hl3070cw-native.ppd        raster driver: this project's filter, Brother quality
+ppd/hl3070cw-postscript.ppd    the printer's own PostScript (BR-Script 3), no filter
+ppd/linux/hl3070cw-native.ppd  the raster driver for Linux: the filter from CUPS's
+                               filter folder, no ICC profiles (Brother's Linux
+                               driver has none); the PostScript PPD serves both
 
 Option keywords and choices follow Brother's own PPD, so presets and saved
 lpoptions keep working when a queue switches drivers.
@@ -130,26 +133,30 @@ def fonts() -> list[str]:
             '*Font Times-Roman: Standard "(001.007S)" Standard ROM']
 
 
-def native() -> str:
+def native(linux: bool = False) -> str:
     pd = lambda key, val: f"<</{key} {val}>>setpagedevice"  # noqa: E731
     lines = header("Brother HL-3070CW native", "Brother HL-3070CW, native driver (open source)",
                    "HL-3070CW native", "HL3070NA.PPD")
     lines += [
-        f'*cupsFilter: "application/vnd.cups-raster 0 {DRIVER_DIR}/rastertohl3070cw"',
+        # Linux: a bare name, found in CUPS's own filter folder (/usr/lib/cups/filter)
+        f'*cupsFilter: "application/vnd.cups-raster 0 {"" if linux else DRIVER_DIR + "/"}rastertohl3070cw"',
         "*% Secure Print: the print dialog's \"Print with PIN\", a PIN of 4 digits",
         '*cupsJobPassword: "1111"',
         "",
-        "*% macOS colour matching with Brother's ICC profiles (copied into the driver folder at install)",
-        "*cupsICCQualifier2: BRGray",
-        "*cupsICCQualifier3: BRResolution",
-        f'*cupsICCProfile RGB../Normal: "{DRIVER_DIR}/data/profiles/broch08_PL_NM_IG_ON.icm"',
-        f'*cupsICCProfile .ON.600dpi/Normal, Improve Gray: "{DRIVER_DIR}/data/profiles/broch08_PL_NM_IG_ON.icm"',
-        f'*cupsICCProfile .OFF.600dpi/Normal: "{DRIVER_DIR}/data/profiles/broch08_PL_NM.icm"',
-        f'*cupsICCProfile .ON.600x2400dpi/Fine, Improve Gray: "{DRIVER_DIR}/data/profiles/broch08_PL_Fi_IG_ON.icm"',
-        f'*cupsICCProfile .OFF.600x2400dpi/Fine: "{DRIVER_DIR}/data/profiles/broch08_PL_Fi.icm"',
-        "",
-        "*DefaultResolution: 600dpi",
     ]
+    if not linux:
+        lines += [
+            "*% macOS colour matching with Brother's ICC profiles (copied into the driver folder at install)",
+            "*cupsICCQualifier2: BRGray",
+            "*cupsICCQualifier3: BRResolution",
+            f'*cupsICCProfile RGB../Normal: "{DRIVER_DIR}/data/profiles/broch08_PL_NM_IG_ON.icm"',
+            f'*cupsICCProfile .ON.600dpi/Normal, Improve Gray: "{DRIVER_DIR}/data/profiles/broch08_PL_NM_IG_ON.icm"',
+            f'*cupsICCProfile .OFF.600dpi/Normal: "{DRIVER_DIR}/data/profiles/broch08_PL_NM.icm"',
+            f'*cupsICCProfile .ON.600x2400dpi/Fine, Improve Gray: "{DRIVER_DIR}/data/profiles/broch08_PL_Fi_IG_ON.icm"',
+            f'*cupsICCProfile .OFF.600x2400dpi/Fine: "{DRIVER_DIR}/data/profiles/broch08_PL_Fi.icm"',
+            "",
+        ]
+    lines += ["*DefaultResolution: 600dpi"]
     raster = "/HWResolution[600 600]/cupsColorOrder 0/cupsColorSpace 1/cupsBitsPerColor 8"
     lines += pick_one("BRResolution", "Print Quality", 10, "600dpi",
                       [("600dpi", "Normal (600 x 600 dpi)", f"<<{raster}/cupsInteger4 0>>setpagedevice"),
@@ -212,7 +219,9 @@ def main() -> int:
     check = sys.argv[1:] == ["--check"]
     stale = 0
     os.makedirs(os.path.join(ROOT, "ppd"), exist_ok=True)
-    for name, text in (("hl3070cw-native.ppd", native()), ("hl3070cw-postscript.ppd", postscript())):
+    os.makedirs(os.path.join(ROOT, "ppd", "linux"), exist_ok=True)
+    for name, text in (("hl3070cw-native.ppd", native()), ("hl3070cw-postscript.ppd", postscript()),
+                       ("linux/hl3070cw-native.ppd", native(linux=True))):
         path = os.path.join(ROOT, "ppd", name)
         if check:
             with open(path, encoding="latin-1") as f:
