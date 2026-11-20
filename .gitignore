@@ -1,0 +1,17 @@
+# build output
+/build/
+*.o
+*.dSYM/
+
+# test pages and printer data made during experiments (fixtures live in tests/fixtures/)
+*.ras
+*.prn
+!tests/fixtures/*.prn
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# macOS
+.DS_Store
