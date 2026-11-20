@@ -1,0 +1,54 @@
+name: CI
+
+# Builds the driver and runs everything that needs nothing of Brother's:
+# `make check` (sanitizer build on made-up data), `make lint` and the
+# installer package. `make test` compares with Brother's own output and needs
+# Brother's data files, so it only runs on a Mac that has Brother's driver.
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Build, self-test, package
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build (arm64 + x86_64)
+        run: |
+          make
+          lipo -archs build/rastertohl3070cw
+          codesign --verify --strict --verbose build/rastertohl3070cw
+      - name: Self-test with sanitizers
+        run: make check
+      - name: Installer package
+        run: |
+          make pkg
+          pkgutil --payload-files build/pkg/*.pkg
+
+  lint:
+    name: Lint
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install shellcheck and LLVM (for clang-tidy)
+        run: brew install --quiet shellcheck llvm
+      - name: Lint
+        run: make lint

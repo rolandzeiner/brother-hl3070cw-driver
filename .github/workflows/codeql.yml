@@ -1,0 +1,56 @@
+name: CodeQL
+
+# Scans the filter's C code and the workflow files. Runs on every push to
+# main and dev, every pull request to main, and weekly for new advisories on
+# unchanged code. The Python tools are for development only and are not
+# installed, so they are not scanned.
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "37 4 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # the filter links against macOS's libcups, so it is built on a Mac
+          - language: c-cpp
+            build-mode: manual
+            os: macos-latest
+          - language: actions
+            build-mode: none
+            os: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-extended
+      - name: Build
+        if: matrix.build-mode == 'manual'
+        run: make
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        with:
+          category: "/language:${{ matrix.language }}"

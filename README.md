@@ -63,15 +63,15 @@ without Brother's files.
 ### 2. Download the installer
 
 Open the [latest release](https://github.com/rolandzeiner/brother-hl3070cw-driver/releases/latest).
-Under **Assets**, click the file ending in `.pkg` (for example `HL3070CW-Driver-0.4.0.pkg`). It
+Under **Assets**, click the file ending in `.pkg` (for example `HL3070CW-Driver-0.4.1.pkg`). It
 goes to your Downloads folder.
 
 ### 3. Open the installer
 
 Double-click the downloaded file. The first time, macOS refuses to open it:
 
-> **"HL3070CW-Driver-0.4.0.pkg" Not Opened**
-> Apple could not verify "HL3070CW-Driver-0.4.0.pkg" is free of malware that may harm your Mac or
+> **"HL3070CW-Driver-0.4.1.pkg" Not Opened**
+> Apple could not verify "HL3070CW-Driver-0.4.1.pkg" is free of malware that may harm your Mac or
 > compromise your privacy.
 
 macOS shows this for every installer that is not signed with a paid Apple developer certificate,
@@ -80,7 +80,7 @@ To open it anyway:
 
 1. Click **Done**. Do not click **Move to Trash**.
 2. Open **System Settings** and click **Privacy & Security** in the sidebar.
-3. Scroll down to **Security**. There is a line saying that "HL3070CW-Driver-0.4.0.pkg" was
+3. Scroll down to **Security**. There is a line saying that "HL3070CW-Driver-0.4.1.pkg" was
    blocked to protect your Mac. Click **Open Anyway** next to it. The button appears only for
    about an hour after you tried to open the file; if it is missing, double-click the file again
    first.
@@ -93,13 +93,19 @@ If you are comfortable with Terminal, this removes the download mark from the fi
 which a double-click opens it directly:
 
 ```sh
-xattr -d com.apple.quarantine ~/Downloads/HL3070CW-Driver-0.4.0.pkg
+xattr -d com.apple.quarantine ~/Downloads/HL3070CW-Driver-0.4.1.pkg
 ```
 
 ### 4. Run the installer
 
 Click through the installer and enter your administrator password when asked. It installs both
 driver versions. If Brother's driver files are missing, it installs only the PostScript version.
+
+### Updating
+
+To update, download the newest installer and run it the same way. Printers you have already added
+keep their settings. The installer gives them the new version's options (Print Quality came with
+0.4.0), so you do not have to remove and add them again.
 
 ## Add the printer
 
@@ -144,6 +150,13 @@ save the settings as a preset.
 when you installed. Install Brother's driver ([step 1](#1-check-for-brothers-driver)) and run this
 installer again. Until then, use **Brother HL-3070CW PostScript**.
 
+**Print Quality is missing from the print dialog.** The printer was added with an older version of
+this driver. Run the newest installer; it updates the printers that are already set up.
+
+**Fine prints the same as Normal.** The files for Fine quality come from Brother's driver. If they
+were not on the Mac when you installed, Fine jobs are printed in Normal quality. Install Brother's
+driver ([step 1](#1-check-for-brothers-driver)) and run this installer again.
+
 **The printer does not respond or jobs wait in the queue.** Check that the printer is switched on
 and on the same network as the Mac. A job sent while the printer is off is printed once it is
 switched on (macOS cancels it after three hours).
@@ -185,6 +198,11 @@ and describe what you printed and what happened. A GitHub account is needed for 
 The driver has been tested with an HL-3070CW connected over Wi-Fi. Ethernet and USB should work the
 same way but have not been tested.
 
+Black-and-white pages have been printed on paper, in Normal and in Fine quality. Colour has so far
+only been compared with the data Brother's driver produces, because the test printer's cyan
+cartridge is empty. If a colour page looks wrong, please
+[open an issue](https://github.com/rolandzeiner/brother-hl3070cw-driver/issues).
+
 Like every macOS printer driver of this kind (Brother's included), it is a PPD-based driver. macOS 27
 supports these fully. CUPS, the printing system inside macOS, has marked such drivers as deprecated
 for future versions, so a later macOS release could need a different approach.
@@ -209,11 +227,14 @@ never run.
 
 ## For developers
 
-You need the Xcode command line tools (`xcode-select --install`).
+You need the Xcode command line tools (`xcode-select --install`). `make lint` also uses
+shellcheck and, if it is installed, clang-tidy (`brew install shellcheck llvm`).
 
 ```sh
 make                 # build/rastertohl3070cw, a universal binary (arm64 + x86_64)
-make test            # compare with checksums of Brother's output (no Rosetta needed)
+make check           # sanitizer build on made-up data: needs nothing of Brother's
+make lint            # clang-tidy or the Clang analyzer, shellcheck, cupstestppd
+make test            # compare with checksums of Brother's output (needs Brother's data files, no Rosetta)
 make oracle-test     # compare live with Brother's driver (needs it and Rosetta 2)
 python3 -I tools/finecheck.py --real   # Fine: image and line-by-line comparison
 make pkg             # the installer package, in build/pkg/
@@ -241,6 +262,9 @@ Repository layout:
 - `tests/fixtures.sha256`: checksums of Brother's output for `make test` (for Fine jobs, of the
   decoded image). The outputs themselves contain Brother's halftone patterns and are kept out of the
   repository.
+- `tools/selftest.py` and `tests/fine_lines.c`: `make check`. It runs the filter with
+  AddressSanitizer and UndefinedBehaviorSanitizer on halftone tiles and colour tables it makes up
+  itself, so it also works where Brother's driver is not installed, as on GitHub's build machines.
 - `docs/FORMAT.md`: the printer language.
 
 Brother's driver is the reference for the tests, and it only runs under Rosetta 2. Work that needs
@@ -250,9 +274,19 @@ macOS 27 or earlier. `tools/finecheck.py` compares Fine output with Brother's li
 ## Security
 
 The driver reads print jobs from any user who may print, so it checks every page before it
-allocates memory or writes anything. An independent audit (sanitizer builds, hostile input files,
-leak checks) found no open issues after its findings were fixed. To report a security problem, see
-[SECURITY.md](SECURITY.md).
+allocates memory or writes anything, and refuses pages larger than the printer can print. It runs
+inside the sandbox macOS puts around printer drivers: it reads its data files and the print job,
+writes the printer data, and does nothing else.
+
+The code has been reviewed for security problems twice by its authors, with sanitizer builds,
+damaged input files and static analysis, and the findings were fixed. No outside party has audited
+it. `make check` and `make lint` repeat those tests, and GitHub runs both on every change.
+
+Like Brother's driver, this one sends the title of the document and your macOS user name to the
+printer with every job, and the connection to the printer is not encrypted. Use the printer on a
+network you trust.
+
+To report a security problem, see [SECURITY.md](SECURITY.md).
 
 ## License and trademarks
 
