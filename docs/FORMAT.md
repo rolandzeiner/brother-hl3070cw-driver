@@ -131,18 +131,20 @@ The records form a doubly linked list. Brother's banding:
 ## 3. Line compression
 
 A line is cut into units of `unit` pixels (MSB first, the last unit padded with
-0). Commands:
+0); every unit is a bit field of `unit` bits. Commands, all starting on a byte
+boundary:
 
-| Command | Method 2 (unit packed as a bit field) | Method 4 (unit in whole bytes) |
-|---|---|---|
-| repeat a unit *n* times | nibble `1rrr`, then the unit; *n* = r + 1; r = 7: *n* = 8 + ext | byte `1rrrrrrr`, then the unit; *n* = r + 1; r = 127: *n* = 128 + ext |
-| literal, *n* ≥ 2 units | byte `01rrrrrr`, *n* = r + 2 (r = 63: *n* = 65 + ext), then *n* units, then pad to a byte | same |
-| copy *n* units from back in the line | byte `00rrrrrr`, *n* = r + 1 (r = 63: *n* = 64 + ext); unit *i* = unit *i* − 2 | same, but unit *i* = unit *i* − 4 |
+| Command | Encoding |
+|---|---|
+| repeat a unit *n* times | method 2: nibble `1rrr`; method 4: `1` + (15 − unit) count bits, so command plus unit are 16 bits. Then the unit. *n* = r + 1; at the maximum r, *n* = max + 1 + ext |
+| literal, *n* ≥ 2 units | byte `01rrrrrr`, *n* = r + 2 (r = 63: *n* = 65 + ext), then *n* units, then pad to a byte |
+| copy *n* units from back in the line | byte `00rrrrrr`, *n* = r + 1 (r = 63: *n* = 64 + ext); unit *i* = unit *i* − 2 in method 2, *i* − 4 in method 4 |
 
 `ext` is an extension count that follows the command (for repeat: after the
 unit, at the next byte boundary): bytes are added while they are `0xff`, the
 first byte below `0xff` ends it (`ff 85` = 255 + 133). Units before the line
-start read as 0 for a copy. All commands start on a byte boundary.
+start read as 0 for a copy. Verified for method 2 with 12- and 20-pixel units
+and method 4 with 8- and 10-pixel units, all four planes.
 
 Examples, method 2 / 12-pixel units, 192 units per line:
 
@@ -202,9 +204,20 @@ The verification reruns Brother's filter until it produces the common variant.
 
 ## Open points
 
-* **Colour.** RGB → CMYK conversion and per-plane tone curves; planes C and M
-  use other unit widths (20, and 10 with method 4), and the copy distance for
-  those is not measured yet. Dither files: `0600-{c,m,y}_cache08.bin`.
+* **Colour.** Planes and band format are known (above). Each plane has its
+  own bands: ReadImage `CommentData` = plane (0 K, 1 C, 2 M, 3 Y). Halftone
+  tiles: `0600-{k,c,m}_cache08.bin` are 80 x 80, `0600-y_cache08.bin` 24 x 24,
+  all anchored at the image origin. RGB → CMYK uses 17 x 17 x 17 tables stored
+  in Brother's filter after names like `HL-30xxC 600dpi ImpGray=ON Ver1.01
+  (2011/03/29) Match Monitor` (nodes in R, G, B order, four u16 C, M, Y, K per
+  node; variants for Match Monitor / Vivid / None, Improve Gray on/off, 600 dpi
+  and CAPT). Interpolation with nodes every 16 input steps (255 counts as 256)
+  reproduces all measured edge values except some exact .5 cases; the tie rule
+  is still open. Neutral colours print with K only when Improve Gray is on.
+* **The printer also has PCL, PCL XL and BR-Script 3 (PostScript 3)
+  interpreters** (SNMP `prtInterpreterTable`). A PostScript page wrapped in
+  `@PJL SET RENDERMODE=GRAYSCALE` / `@PJL ENTER LANGUAGE=POSTSCRIPT` prints
+  correctly in Mono.
 * **Fine (2400 dpi class).** `APTMODE=ON4`, ColorDepth 1 (2 bits per pixel),
   plane table entries `12, 0`, band header `0x000c`. Format not worked out.
 * **Auto colour detection** (`COLORADAPT=ON`), **Improve Gray**, **Enhance Black**,

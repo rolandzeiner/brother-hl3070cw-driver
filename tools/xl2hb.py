@@ -57,8 +57,9 @@ class FormatError(Exception):
 
 
 # "00rrrrrr" repeats the units found this many units back in the same line
-# (units before the line start read as 0). Measured on the K plane.
-COPY_DISTANCE = {2: 2, 4: 4}
+# (units before the line start read as 0): 2 in method 2, 4 in method 4,
+# measured on all planes (units 8, 10, 12 and 20).
+COPY_DISTANCE = {(2, 12): 2, (2, 20): 2, (4, 8): 4, (4, 10): 4}
 
 
 def units_to_bits(units: list[int], unit: int, width_bits: int) -> bytes:
@@ -88,16 +89,22 @@ def bits_to_units(row: bytes, unit: int, width_bits: int) -> list[int]:
     return units
 
 
-def decode_line(data: bytes, method: int, unit: int, nunits: int, prev: list[int], trace: list | None = None) -> list[int]:
-    out: list[int] = []
+def rep_bits_for(method: int, unit: int) -> int:
+    """Bits of the repeat count: a nibble command in method 2, and in method 4
+    whatever makes command plus unit exactly 16 bits."""
     if method == 2:
-        rep_bits = 3  # repeat command is one nibble, then the unit as a bit field
-    elif method == 4:
-        rep_bits = 7  # repeat command is one byte, then the unit in whole bytes
-    else:
-        raise FormatError(f"unknown method {method}")
+        return 3
+    if method == 4:
+        return 15 - unit
+    raise FormatError(f"unknown method {method}")
+
+
+def decode_line(data: bytes, method: int, unit: int, nunits: int, prev: list[int], trace: list | None = None,
+                copy_distance: int | None = None) -> list[int]:
+    out: list[int] = []
+    rep_bits = rep_bits_for(method, unit)
     rep_max = (1 << rep_bits) - 1
-    unit_bits = unit if method == 2 else -(-unit // 8) * 8
+    dist = copy_distance if copy_distance is not None else COPY_DISTANCE.get((method, unit))
     br = BitReader(data)
     while len(out) < nunits:
         if br.done():
@@ -105,12 +112,13 @@ def decode_line(data: bytes, method: int, unit: int, nunits: int, prev: list[int
         top = br.read(1)
         if top:  # repeat
             r = br.read(rep_bits)
-            u = br.read(unit_bits)
+            u = br.read(unit)
             if r == rep_max:
                 br.align()
                 count = rep_max + 1 + br.ext()
             else:
                 count = r + 1
+            br.align()
             if trace is not None:
                 trace.append(("rep", count, u))
             out.extend([u] * count)
@@ -121,7 +129,7 @@ def decode_line(data: bytes, method: int, unit: int, nunits: int, prev: list[int
                 count = r + 2
                 if r == 63:
                     count += br.ext()
-                units = [br.read(unit_bits) for _ in range(count)]
+                units = [br.read(unit) for _ in range(count)]
                 br.align()
                 if trace is not None:
                     trace.append(("lit", count, units))
@@ -132,7 +140,8 @@ def decode_line(data: bytes, method: int, unit: int, nunits: int, prev: list[int
                     count += br.ext()
                 if trace is not None:
                     trace.append(("copy", count))
-                dist = COPY_DISTANCE[method]
+                if dist is None:
+                    raise FormatError(f"copy distance for method {method} unit {unit} unknown")
                 for _ in range(count):
                     src = len(out) - dist
                     out.append(out[src] if src >= 0 else 0)
@@ -141,7 +150,7 @@ def decode_line(data: bytes, method: int, unit: int, nunits: int, prev: list[int
     return out
 
 
-def decode_band(data: bytes, trace: bool = False):
+def decode_band(data: bytes, trace: bool = False, copy_distance: int | None = None):
     """Return (method, unit, bytes_per_line, rows as 1-bit bytes)."""
     if sum(data) & 0xFF:
         raise FormatError("checksum mismatch")
@@ -164,9 +173,9 @@ def decode_band(data: bytes, trace: bool = False):
         line = data[p : p + ln]
         p += (ln + 3) & ~3
         tr: list = []
-        units = decode_line(line, method, unit, nunits, prev, tr if trace else None)
+        units = decode_line(line, method, unit, nunits, prev, tr if trace else None, copy_distance)
         traces.append(tr)
-        rows.append(units_to_bits(units, unit if method == 2 else -(-unit // 8) * 8, width_bits))
+        rows.append(units_to_bits(units, unit, width_bits))
         prev = units
         prev_len = ln
     pl, nxt = struct.unpack_from(">HH", data, p)
