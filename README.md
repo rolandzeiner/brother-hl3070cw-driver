@@ -243,6 +243,9 @@ differences:
 To update, run `git pull`, `make` and the installer again; printers keep their settings. To
 remove the driver: `sudo ./install-linux.sh --uninstall`.
 
+To share the printer with every computer and phone in the house over AirPrint, run it as a print
+server in Docker, for example on a Raspberry Pi: see [docker/README.md](docker/README.md).
+
 ## What works
 
 | | Native driver | PostScript driver |
