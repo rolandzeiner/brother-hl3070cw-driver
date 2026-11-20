@@ -67,15 +67,36 @@ goes to your Downloads folder.
 
 ### 3. Open the installer
 
-Double-click the downloaded file. Because this free project does not pay for an Apple developer
-certificate, macOS stops it the first time with a message like "Apple could not verify ... is free
-of malware". Click **Done**, then:
+Double-click the downloaded file. The first time, macOS refuses to open it:
 
-1. Open **System Settings** and click **Privacy & Security** in the sidebar.
-2. Scroll down to the **Security** section. Next to the message about the installer, click **Open Anyway**.
-3. Confirm with your password or Touch ID. The installer opens.
+> **"HL3070CW-Driver-0.3.0.pkg" Not Opened**
+> Apple could not verify "HL3070CW-Driver-0.3.0.pkg" is free of malware that may harm your Mac or
+> compromise your privacy.
 
-On macOS 14 and older you can instead right-click the file, choose **Open**, then **Open** again.
+(German macOS: „HL3070CW-Driver-0.3.0.pkg" nicht geöffnet.)
+
+macOS shows this for every installer that is not signed with a paid Apple developer certificate,
+which this free project does not have. The package is the one built from this repository's code.
+To open it anyway:
+
+1. Click **Done** (Fertig). Do not click **Move to Trash** (In den Papierkorb legen).
+2. Open **System Settings** (Systemeinstellungen) and click **Privacy & Security** (Datenschutz &
+   Sicherheit) in the sidebar.
+3. Scroll down to **Security** (Sicherheit). There is a line saying that
+   "HL3070CW-Driver-0.3.0.pkg" was blocked to protect your Mac. Click **Open Anyway** (Dennoch öffnen)
+   next to it. The button appears only for about an hour after you tried to open the file; if it
+   is missing, double-click the file again first.
+4. macOS asks once more: click **Open Anyway** (Dennoch öffnen) and confirm with your password or
+   Touch ID. The installer opens.
+
+On macOS 14 Sonoma and older, right-clicking the file and choosing **Open** also works.
+
+If you are comfortable with Terminal, this removes the download mark from the file instead, after
+which a double-click opens it directly:
+
+```sh
+xattr -d com.apple.quarantine ~/Downloads/HL3070CW-Driver-0.3.0.pkg
+```
 
 ### 4. Run the installer
 
