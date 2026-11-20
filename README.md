@@ -16,7 +16,7 @@ with an open, native one.
 | How | this project's filter writes Brother's own printer language | the printer renders PostScript itself (BR-Script 3) |
 | Needs | Brother's driver data on the Mac (see below) | nothing |
 | Mono | byte-identical to Brother's driver | printer's own rendering |
-| Colour | Brother's colour tables and halftones; 99.96 % of dots identical to Brother's | printer's own rendering, visibly weaker greys and yellows |
+| Colour | Brother's colour tables and halftones; about 99.96 % of dots identical to Brother's | printer's own rendering, visibly weaker greys and yellows |
 | Options | paper sizes, tray / manual feed, media types, Colour / Mono / Auto, Color Mode (Normal, Vivid, None), Improve Gray, Toner Save, Improve Print Output | paper sizes, tray / manual feed, Colour / Mono, Toner Save |
 | Not yet | Fine (2400 dpi class) | media types |
 
@@ -50,7 +50,7 @@ format was worked out by black-box testing against Brother's own filter and is d
 
 ```sh
 make            # build/rastertohl3070cw, universal binary
-make test       # compare with stored outputs of Brother's filter (no Rosetta needed)
+make test       # compare with checksums of Brother's output (no Rosetta needed)
 make oracle-test  # compare live with Brother's filter (needs its driver and Rosetta 2)
 ```
 
@@ -68,7 +68,7 @@ build/rastertohl3070cw 1 user title 1 "BRMonoColor=Mono" page.ras > page.prn
 - `install.sh`: installer for macOS
 - `tools/`: Python tools used to work out and check the format: raster writer, PCL XL parser,
   band decoder and encoder, measurement scripts, byte-for-byte comparison with Brother's filter
-- `tests/fixtures/`: reference outputs of Brother's filter for `make test`
+- `tests/fixtures.sha256`: checksums of Brother's output for `make test`
 - `docs/FORMAT.md`: the printer language
 
 ## License

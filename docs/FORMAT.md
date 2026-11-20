@@ -6,9 +6,11 @@ black-box testing: synthetic pages went through Brother's own macOS filter
 until every pixel could be accounted for. No Brother code was disassembled,
 copied or redistributed.
 
-Status: **Mono at 600 dpi is complete**: the filter in `src/` reproduces
-Brother's output byte for byte (see [Verification](#verification)). Colour
-and the "Fine" mode are partly known; the open points are listed at the end.
+Status: **600 dpi Mono and colour are implemented** in `src/`. Mono output is
+byte-identical to Brother's; colour is byte-identical for colours on the edges
+of Brother's colour-table cells, greys and black, and differs by one tone
+level for about 7 % of other colours (see [Colour](#6-colour) and
+[Verification](#verification)). The "Fine" mode is not worked out yet.
 
 All multi-byte numbers in the band format are **big-endian**; everything in the
 PCL XL layer is **little-endian** (PCL XL's `eBinaryLowByteFirst`).
@@ -123,8 +125,11 @@ u8   checksum: the sum of all band bytes is 0 mod 256
 
 The records form a doubly linked list. Brother's banding:
 
-* a band is a run of consecutive **non-blank** rows; blank rows are never sent,
+* each plane has its own bands; a band is a run of consecutive **non-blank**
+  rows of that plane; blank rows are never sent,
   a page with no ink has BeginImage/EndImage and no ReadImage;
+* a band is written as soon as it ends; when several planes' bands end on the
+  same row they are written in the order C, M, Y, K;
 * before adding a row, a new band starts once the band (12-byte header plus
   records so far) has reached **27000 bytes**.
 
@@ -153,10 +158,13 @@ Examples, method 2 / 12-pixel units, 192 units per line:
 40 12 34 56 f0 00 b6  literal 0x123 0x456, then 190 blank units
 ```
 
-**Brother's encoder** (reproduced exactly by `xl_encode_line`): walk the units;
-if the next units repeat (run ≥ 2) emit a repeat; otherwise if at least 2 units
-match the ones 2 back emit a copy; otherwise collect literal units. A single
-literal unit is written as a repeat ×1.
+**Brother's encoder** (reproduced exactly by `xl_encode_line`): walk the units.
+Method 2 emits a repeat when the next units repeat (run ≥ 2), otherwise a copy
+when at least 2 units match the ones `distance` back, otherwise collects literal
+units. Method 4 checks the copy first, then the repeat, even where the repeat
+would be longer. A copy may reach before the line start (units read as 0), but
+the first unit of a line is never a copy. A single literal unit is written as a
+repeat ×1.
 
 **Method 4.** Brother's filter picks method 4 (`0x0408` for every plane) for
 about one job in five, at random, apparently from uninitialised memory. The
@@ -190,45 +198,60 @@ Brother's filter output varies between runs of the same job:
 
 The verification reruns Brother's filter until it produces the common variant.
 
+## 6. Colour
+
+ReadImage `CommentData` gives the plane (0 K, 1 C, 2 M, 3 Y). PJL:
+`RENDERMODE=COLOR`, `COLORADAPT=ON` for Color/Mono = Auto, and
+`@PJL SET IMPROVEGRAY=ON` after `APTMODE` when Improve Gray is on; the third
+value of the plane table in BeginImage is 1.
+
+**Halftone.** `0600-{k,c,m}_cache08.bin` hold 80 x 80 tiles,
+`0600-y_cache08.bin` 24 x 24 tiles (`-TS` for Toner Save), all anchored at the
+image origin. The tile index is the plane's level from the colour step.
+
+**RGB → C, M, Y, K.** Brother's filter keeps 17 x 17 x 17 tables after names
+such as `HL-30xxC 600dpi ImpGray=ON Ver1.01 (2011/03/29) Match Monitor` and
+their terminating zero: nodes in R, G, B order (R slowest), four little-endian
+u16 per node in the order C, M, Y, K. Color Mode Normal / Vivid / None selects
+`Match Monitor` / `Vivid` / `None (Table Type)`, Improve Gray selects
+`ImpGray=ON` / `OFF`; `CAPT` tables belong to the Fine mode. Enhance Black and
+Toner Save do not change the table.
+
+Interpolation is tetrahedral (Kuhn split: sort the in-cell fractions), with
+nodes every 16 input steps (255 counts as 256) and the result rounded half up.
+The weights behave like 12-bit fixed point: in 1/4096 of a cell
+W(f) = 256 f + e(f), e = 0 at f = 4, 8, 12, small integers elsewhere,
+e(16 - f) = -e(f). Fitted tables (in `src/color.c`) reproduce every measured
+point with one channel between nodes. Points with two or three channels between
+nodes fit no model found: on random colours 93 % come out exact and the others
+one level off in one plane, which makes 0.03-0.04 % of all dots differ.
+Finding the exact arithmetic would mean reading Brother's code, which this
+project does not do.
+
 ## Verification
 
-* `make test` compares the filter with 37 stored outputs of Brother's filter
-  (`tests/fixtures/`; inputs are regenerated from fixed seeds): dots, random
-  black/white pages on A6 and A4, all 256 greys, 1500 random colours, Toner
-  Save, Improve Output, manual feed, media types, all 22 paper sizes, a
-  three-page job, title and user. Works without Rosetta.
+* `make test` compares the filter with checksums of 45 outputs of Brother's
+  filter (`tests/fixtures.sha256`; inputs are regenerated from fixed seeds):
+  dots, random black/white pages on A6 and A4, all 256 greys, 1500 random
+  colours in Mono, Toner Save, Improve Output, manual feed, media types, all
+  22 paper sizes, multi-page jobs, title and user, and in colour: table-edge
+  colours in every colour option, greys and black content. Works without
+  Rosetta. The outputs themselves contain Brother's halftone patterns and are
+  not in the repository; `make fixtures` keeps them in `tests/fixtures-local/`.
 * `make oracle-test` runs the same against Brother's filter live, plus a
   smooth gradient and real text documents rendered by macOS (A4, Letter, A5,
   3.5 MB each). Needs Brother's driver and Rosetta 2.
+* `tools/colorcheck.py` reports how many dots differ for arbitrary colours.
 * `tools/roundtrip.py` checks the decoder (`tools/xl2hb.py`) on random pages.
 
 ## Open points
 
-* **Colour.** Planes and band format are known (above). Each plane has its
-  own bands: ReadImage `CommentData` = plane (0 K, 1 C, 2 M, 3 Y). Halftone
-  tiles: `0600-{k,c,m}_cache08.bin` are 80 x 80, `0600-y_cache08.bin` 24 x 24,
-  all anchored at the image origin. RGB → CMYK uses 17 x 17 x 17 tables stored
-  in Brother's filter after names like `HL-30xxC 600dpi ImpGray=ON Ver1.01
-  (2011/03/29) Match Monitor` (nodes in R, G, B order, four u16 C, M, Y, K per
-  node; variants for Match Monitor / Vivid / None, Improve Gray on/off, 600 dpi
-  and CAPT). The interpolation is tetrahedral (Kuhn split: sort the in-cell
-  fractions), nodes every 16 input steps (255 counts as 256), result rounded
-  half up. The weights behave like 12-bit fixed point: in 1/4096 of a cell,
-  W(f) = 256 f + e(f) with e = 0 at f = 4, 8, 12, small non-zero integers
-  elsewhere and e(16 - f) = -e(f). Points with one or two channels between
-  nodes (cube edges and faces) fit such models without a single exception.
-  Points with all three channels between nodes do not: no linear or common
-  fixed-point model found reproduces all of them. Best result: 93 % of random
-  colours exact, the rest one level off in one plane. Going further would
-  mean reading Brother's code, which this project does not do.
-  Black-box tests in tools/ (measure_color.py, colormodel.py); a per-position
-  weight table: W = [0, 252, 506, 773, 1024, 1281, 1533, 1793, 2048, 2303,
-  2563, 2815, 3072, 3323, 3590, 3844, 4096].
-* **The printer also has PCL, PCL XL and BR-Script 3 (PostScript 3)
-  interpreters** (SNMP `prtInterpreterTable`). A PostScript page wrapped in
-  `@PJL SET RENDERMODE=GRAYSCALE` / `@PJL ENTER LANGUAGE=POSTSCRIPT` prints
-  correctly in Mono.
 * **Fine (2400 dpi class).** `APTMODE=ON4`, ColorDepth 1 (2 bits per pixel),
-  plane table entries `12, 0`, band header `0x000c`. Format not worked out.
-* **Auto colour detection** (`COLORADAPT=ON`), **Improve Gray**, **Enhance Black**,
-  **Color Matching** (the last two did not change Mono output).
+  plane table entries `12, 0`, band header `0x000c`, `capt-*` halftone files and
+  `CAPT` colour tables. Format not worked out.
+* **Colour interpolation** with two or three channels between nodes (above).
+* **Enhance Black Printing** changed nothing in any test so far.
+* **The printer also has PCL, PCL XL and BR-Script 3 (PostScript 3)
+  interpreters** (SNMP `prtInterpreterTable`). This project's PostScript PPD
+  uses BR-Script 3; a PostScript page wrapped in `@PJL SET RENDERMODE=GRAYSCALE`
+  / `@PJL ENTER LANGUAGE=POSTSCRIPT` prints correctly in Mono.

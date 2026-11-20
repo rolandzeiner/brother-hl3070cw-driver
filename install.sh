@@ -20,6 +20,9 @@ readonly NATIVE_PPD_NAME="Brother HL-3070CW native.ppd"
 readonly PS_PPD_NAME="Brother HL-3070CW PostScript.ppd"
 readonly BROTHER_FILTER=/Library/Printers/Brother/Filter/rastertobrother3040.bundle/Contents/MacOS/rastertobrother3040
 readonly BROTHER_LUT="/Library/Printers/Brother/Brother LUT"
+# Absolute paths: commands run through sudo must not depend on the caller's PATH.
+readonly SUDO_BIN=/usr/bin/sudo MKDIR=/bin/mkdir INSTALL=/usr/bin/install RM=/bin/rm
+readonly LPADMIN=/usr/sbin/lpadmin LPSTAT=/usr/bin/lpstat STAT=/usr/bin/stat
 
 main() {
     DRY_RUN=0
@@ -30,8 +33,8 @@ main() {
     PROBLEMS=0
     parse_args "$@"
 
-    [[ $(uname -s) == Darwin ]] || die "This installer is for macOS."
-    if ((EUID == 0)); then SUDO=(); else SUDO=(sudo); fi
+    [[ $(/usr/bin/uname -s) == Darwin ]] || die "This installer is for macOS."
+    if ((EUID == 0)); then SUDO=(); else SUDO=("$SUDO_BIN"); fi
 
     if ((UNINSTALL)); then
         uninstall
@@ -50,10 +53,16 @@ main() {
     [[ -n $bin ]] || die "rastertohl3070cw not found next to the installer; build it with: make"
     local native_ppd="$src_dir/ppd/hl3070cw-native.ppd" ps_ppd="$src_dir/ppd/hl3070cw-postscript.ppd"
     [[ -f $native_ppd && -f $ps_ppd ]] || die "PPD files missing in $src_dir/ppd"
+    # What gets installed as root, and run as root, must not be changeable by others.
+    local f
+    for f in "$bin" "$(dirname -- "$bin")" "$native_ppd" "$ps_ppd" "$src_dir/ppd"; do
+        check_source "$f"
+    done
+    log "Filter: $("$bin" --version 2>/dev/null || printf 'unknown version')"
 
     log "Installing the filter into $DRIVER_DIR"
-    run "${SUDO[@]+"${SUDO[@]}"}" mkdir -p -- "$DRIVER_DIR"
-    run "${SUDO[@]+"${SUDO[@]}"}" install -m 755 -o root -g wheel "$bin" "$DRIVER_DIR/rastertohl3070cw"
+    run "${SUDO[@]+"${SUDO[@]}"}" "$MKDIR" -m 755 -p -- "$DRIVER_DIR"
+    run "${SUDO[@]+"${SUDO[@]}"}" "$INSTALL" -m 755 -o root -g wheel "$bin" "$DRIVER_DIR/rastertohl3070cw"
 
     local have_brother=0
     if [[ -f $BROTHER_FILTER && -d $BROTHER_LUT ]]; then
@@ -72,9 +81,9 @@ main() {
     fi
 
     log "Installing the PPD files into $PPD_DIR"
-    run "${SUDO[@]+"${SUDO[@]}"}" install -m 644 -o root -g wheel "$ps_ppd" "$PPD_DIR/$PS_PPD_NAME"
+    run "${SUDO[@]+"${SUDO[@]}"}" "$INSTALL" -m 644 -o root -g wheel "$ps_ppd" "$PPD_DIR/$PS_PPD_NAME"
     if ((have_brother)); then
-        run "${SUDO[@]+"${SUDO[@]}"}" install -m 644 -o root -g wheel "$native_ppd" "$PPD_DIR/$NATIVE_PPD_NAME"
+        run "${SUDO[@]+"${SUDO[@]}"}" "$INSTALL" -m 644 -o root -g wheel "$native_ppd" "$PPD_DIR/$NATIVE_PPD_NAME"
     fi
 
     if [[ -n $QUEUE ]]; then
@@ -107,17 +116,16 @@ setup_queue() {
     local args
     args=(-p "$QUEUE" -P "$ppd")
     if [[ -n $URI ]]; then
-        args+=(-v "$URI" -E)
-    elif ! lpstat -p "$QUEUE" >/dev/null 2>&1; then
+        # a new queue: enabled, and not shared on the network
+        args+=(-v "$URI" -E -o printer-is-shared=false)
+    elif ! "$LPSTAT" -p "$QUEUE" >/dev/null 2>&1; then
         warn "Queue $QUEUE does not exist; give --uri to create it"
         return 0
     fi
     log "Switching printer queue $QUEUE to ${ppd##*/}"
-    if ! run lpadmin "${args[@]}"; then
+    if ! run "$LPADMIN" "${args[@]}"; then
         warn "lpadmin failed for queue $QUEUE"
-        return 0
     fi
-    run lpadmin -p "$QUEUE" -o printer-is-shared=false || warn "could not mark $QUEUE as not shared"
 }
 
 uninstall() {
@@ -125,7 +133,7 @@ uninstall() {
     local f
     for f in "$PPD_DIR/$NATIVE_PPD_NAME" "$PPD_DIR/$PS_PPD_NAME"; do
         if [[ -e $f ]]; then
-            run "${SUDO[@]+"${SUDO[@]}"}" rm -f -- "$f"
+            run "${SUDO[@]+"${SUDO[@]}"}" "$RM" -f -- "$f"
         fi
     done
     # DRIVER_DIR is a fixed constant; the guard only protects against editing mistakes.
@@ -134,12 +142,26 @@ uninstall() {
     *) die "refusing to remove unexpected path $DRIVER_DIR" ;;
     esac
     if [[ -d $DRIVER_DIR ]]; then
-        run "${SUDO[@]+"${SUDO[@]}"}" rm -rf -- "${DRIVER_DIR:?}"
+        run "${SUDO[@]+"${SUDO[@]}"}" "$RM" -rf -- "${DRIVER_DIR:?}"
     fi
     local queues
-    queues=$(lpstat -v 2>/dev/null | grep -i "HL3070CW\|hl-3070" || true)
+    queues=$("$LPSTAT" -v 2>/dev/null | /usr/bin/grep -i "HL3070CW\|hl-3070" || true)
     if [[ -n $queues ]]; then
         printf 'Printer queues are left as they are; switch or delete them in System Settings:\n%s\n' "$queues"
+    fi
+}
+
+# Refuse a source file or folder that belongs to someone other than the caller
+# (or root) or that group or others may write to.
+check_source() {
+    local path=$1 owner mode
+    owner=$("$STAT" -f %u -- "$path") || die "cannot check $path"
+    mode=$("$STAT" -f %Lp -- "$path") || die "cannot check $path"
+    if [[ $owner != "$(/usr/bin/id -u)" && $owner != 0 ]]; then
+        die "$path belongs to another user; refusing to install it as root"
+    fi
+    if ((8#$mode & 8#022)); then
+        die "$path is writable by group or others; refusing to install it as root"
     fi
 }
 

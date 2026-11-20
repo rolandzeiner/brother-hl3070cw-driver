@@ -147,8 +147,8 @@ void xl_encode_line(const uint8_t *row, size_t bpl, int method, int unit, xl_buf
   uint32_t *u = g_units;
   for (size_t k = 0; k < n; k++) {
     uint32_t v = 0;
-    for (unsigned i = 0; i < e.unit; i++) {
-      size_t pos = k * e.unit + i;
+    for (unsigned b = 0; b < e.unit; b++) {
+      size_t pos = k * e.unit + b;
       unsigned bit = pos < nbits ? (row[pos >> 3] >> (7 - (pos & 7))) & 1u : 0u;
       v = (v << 1) | bit;
     }
@@ -253,7 +253,12 @@ int xl_job_begin(xl_writer *w, FILE *out, const xl_job *job) {
   static const char *months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
   struct tm tm;
-  gmtime_r(&job->when, &tm);
+  time_t when = job->when;
+  if (!gmtime_r(&when, &tm)) { /* out-of-range SOURCE_DATE_EPOCH */
+    when = time(NULL);
+    if (!gmtime_r(&when, &tm))
+      memset(&tm, 0, sizeof tm);
+  }
 
   fprintf(out, "\033%%-12345X@PJL \n");
   fprintf(out, "@PJL SET HOLD=OFF\n");
@@ -426,8 +431,8 @@ int xl_page_row(xl_writer *w, unsigned y, const uint8_t *const rows[PLANES]) {
     const uint8_t *row = rows[p];
     int blank = 1;
     if (row)
-      for (unsigned i = 0; i < w->bpl; i++)
-        if (row[i]) {
+      for (unsigned b = 0; b < w->bpl; b++)
+        if (row[b]) {
           blank = 0;
           break;
         }

@@ -32,6 +32,7 @@
 #include <fcntl.h>
 #include <math.h>
 #include <signal.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,6 +41,7 @@
 #include <unistd.h>
 
 #include "color.h"
+#include "fsutil.h"
 #include "halftone.h"
 #include "xl2hb.h"
 
@@ -93,9 +95,11 @@ static const size_entry sizes[] = {
     {363, 516, {XL_SIZE_CUSTOM, 0, NULL, 1280, 1820}}, /* JIS B6 */
 };
 
+static unsigned absdiff(unsigned a, unsigned b) { return a > b ? a - b : b - a; }
+
 static xl_media_size media_size_for(unsigned w, unsigned h) {
   for (size_t i = 0; i < sizeof sizes / sizeof sizes[0]; i++)
-    if ((unsigned)abs((int)sizes[i].w - (int)w) <= 1 && (unsigned)abs((int)sizes[i].h - (int)h) <= 1)
+    if (absdiff(sizes[i].w, w) <= 1 && absdiff(sizes[i].h, h) <= 1)
       return sizes[i].size;
   xl_media_size s = {XL_SIZE_CUSTOM, 0, NULL, (unsigned)lround(w * 254.0 / 72.0),
                      (unsigned)lround(h * 254.0 / 72.0)};
@@ -171,20 +175,34 @@ static const char *data_dir(void) {
   return d && *d ? d : DRIVER_DATA_DIR;
 }
 
+/* snprintf into a buffer, failing instead of silently cutting the path */
+static int path_join(char *buf, size_t cap, const char *dir, const char *sep, const char *name) {
+  int n = snprintf(buf, cap, "%s%s%s", dir, sep, name);
+  if (n < 0 || (size_t)n >= cap) {
+    fprintf(stderr, "ERROR: path too long: %s%s%s\n", dir, sep, name);
+    return -1;
+  }
+  return 0;
+}
+
 static int load_cache(brcd_cache *c, char plane, int toner_save) {
   char name[64], path[1024];
   snprintf(name, sizeof name, "0600-%c%s_cache08.bin", plane, toner_save ? "-TS" : "");
-  snprintf(path, sizeof path, "%s/%s", data_dir(), name);
-  if (access(path, R_OK) != 0)
-    snprintf(path, sizeof path, "%s%s", BROTHER_LUT_DIR, name);
+  if (path_join(path, sizeof path, data_dir(), "/", name))
+    return -1;
+  if (access(path, R_OK) != 0 && path_join(path, sizeof path, BROTHER_LUT_DIR, "", name))
+    return -1;
   return brcd_load(c, path);
 }
 
 static int load_table(color_table *t, int matching, int improve_gray) {
   char path[1024];
-  snprintf(path, sizeof path, "%s/%s", data_dir(), color_table_file((color_matching)matching, improve_gray));
+  if (path_join(path, sizeof path, data_dir(), "/", color_table_file((color_matching)matching, improve_gray)))
+    return -1;
   if (color_table_load(t, path) == 0)
     return 0;
+  if (access(path, F_OK) == 0)
+    fprintf(stderr, "WARNING: %s is damaged, reading the table from Brother's driver instead\n", path);
   if (color_table_from_brother(t, BROTHER_FILTER, (color_matching)matching, improve_gray) == 0)
     return 0;
   fprintf(stderr, "ERROR: Brother's colour tables not found (in %s or Brother's driver). "
@@ -193,64 +211,30 @@ static int load_table(color_table *t, int matching, int improve_gray) {
   return -1;
 }
 
-static int copy_file(const char *src, const char *dst) {
-  FILE *in = fopen(src, "rb");
-  if (!in)
-    return -1;
-  FILE *out = fopen(dst, "wb");
-  if (!out) {
-    fclose(in);
-    return -1;
-  }
-  char buf[1 << 15];
-  size_t n;
-  int ok = 1;
-  while ((n = fread(buf, 1, sizeof buf, in)) > 0)
-    if (fwrite(buf, 1, n, out) != n)
-      ok = 0;
-  ok = ok && !ferror(in);
-  fclose(in);
-  if (fclose(out))
-    ok = 0;
-  return ok ? 0 : -1;
-}
-
-/* Copy what the driver needs out of Brother's installed driver package. */
+/* Copy what the driver needs out of Brother's installed driver package.
+ * Runs as root from the installer: see src/fsutil.c for the safeguards. */
 static int extract_brother_data(const char *dir) {
-  char path[1024], dst[1024];
-  if (mkdir(dir, 0755) && errno != EEXIST) {
-    fprintf(stderr, "cannot create %s: %s\n", dir, strerror(errno));
+  umask(022); /* the files must stay readable for CUPS (_lp) */
+  char sub[1024], path[1024];
+  if (fs_prepare_dir(dir) || path_join(sub, sizeof sub, dir, "/", "profiles") || fs_prepare_dir(sub))
     return 1;
-  }
   int failed = 0;
   static const char planes[] = "kcmy";
   for (int p = 0; p < 4; p++)
     for (int ts = 0; ts < 2; ts++) {
       char name[64];
       snprintf(name, sizeof name, "0600-%c%s_cache08.bin", planes[p], ts ? "-TS" : "");
-      snprintf(path, sizeof path, "%s%s", BROTHER_LUT_DIR, name);
-      snprintf(dst, sizeof dst, "%s/%s", dir, name);
-      if (copy_file(path, dst)) {
-        fprintf(stderr, "cannot copy %s: %s\n", path, strerror(errno));
+      if (path_join(path, sizeof path, BROTHER_LUT_DIR, "", name) || fs_copy_file(path, dir, name))
         failed = 1;
-      }
     }
   if (color_tables_extract(BROTHER_FILTER, dir))
     failed = 1;
   /* ICC profiles for macOS's colour matching (named in the PPD) */
-  snprintf(path, sizeof path, "%s/profiles", dir);
-  if (mkdir(path, 0755) && errno != EEXIST)
-    failed = 1;
   static const char *const profiles[] = {"broch08_PL_NM.icm", "broch08_PL_NM_IG_ON.icm", "broch08_PL_Fi.icm",
                                          "broch08_PL_Fi_IG_ON.icm"};
-  for (size_t i = 0; i < sizeof profiles / sizeof profiles[0]; i++) {
-    snprintf(path, sizeof path, "%s/%s", BROTHER_PROFILES_DIR, profiles[i]);
-    snprintf(dst, sizeof dst, "%s/profiles/%s", dir, profiles[i]);
-    if (copy_file(path, dst)) {
-      fprintf(stderr, "cannot copy %s: %s\n", path, strerror(errno));
+  for (size_t i = 0; i < sizeof profiles / sizeof profiles[0]; i++)
+    if (path_join(path, sizeof path, BROTHER_PROFILES_DIR, "/", profiles[i]) || fs_copy_file(path, sub, profiles[i]))
       failed = 1;
-    }
-  }
   if (!failed)
     printf("Brother's data copied to %s\n", dir);
   return failed;
@@ -259,14 +243,18 @@ static int extract_brother_data(const char *dir) {
 /* PJL strings are quoted; keep them to 80 bytes of printable text. */
 static void clean_text(char *dst, size_t cap, const char *src) {
   size_t n = 0;
-  for (const unsigned char *p = (const unsigned char *)(src ? src : ""); *p && n + 1 < cap; p++)
+  const unsigned char *p = (const unsigned char *)(src ? src : "");
+  for (; *p && n + 1 < cap; p++)
     dst[n++] = (*p == '"') ? '\'' : (*p < 0x20 || *p == 0x7F) ? ' ' : (char)*p;
-  /* do not end in the middle of a UTF-8 sequence */
-  if (src && strlen(src) >= cap) {
-    while (n > 0 && ((unsigned char)dst[n - 1] & 0xC0) == 0x80)
-      n--;
-    if (n > 0 && ((unsigned char)dst[n - 1] & 0xC0) == 0xC0)
-      n--;
+  if (*p && n > 0) {
+    /* cut off: drop the last character only if it was split */
+    size_t i = n - 1;
+    while (i > 0 && ((unsigned char)dst[i] & 0xC0) == 0x80)
+      i--;
+    unsigned lead = (unsigned char)dst[i];
+    size_t len = lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : lead >= 0xC0 ? 2 : 1;
+    if (i + len > n)
+      n = i;
   }
   dst[n] = 0;
 }
@@ -327,6 +315,37 @@ int main(int argc, char *argv[]) {
 
   while (!g_cancelled && cupsRasterReadHeader2(ras, &h)) {
     page++;
+
+    /* The page header is untrusted input: check format and geometry before
+     * anything is allocated or written. libcups does not tie the bytes per
+     * line to the width. The PCL XL fields hold 16 bits, so a page is at most
+     * 65504 pixels wide (65535 after rounding to 32) and 65536 rows high
+     * (the last row past the imageable area is dropped). */
+    unsigned bpp = h.cupsBitsPerPixel;
+    int rgb = h.cupsBitsPerColor == 8 && bpp == 24 && h.cupsColorOrder == CUPS_ORDER_CHUNKED &&
+              (h.cupsColorSpace == CUPS_CSPACE_RGB || h.cupsColorSpace == CUPS_CSPACE_SRGB ||
+               h.cupsColorSpace == CUPS_CSPACE_ADOBERGB);
+    int grey = h.cupsBitsPerColor == 8 && bpp == 8 &&
+               (h.cupsColorSpace == CUPS_CSPACE_W || h.cupsColorSpace == CUPS_CSPACE_SW);
+    if (!rgb && !grey) {
+      fprintf(stderr, "ERROR: unsupported raster: colour space %u, %u bits per colour, %u bits per pixel\n",
+              h.cupsColorSpace, h.cupsBitsPerColor, bpp);
+      status = 1;
+      break;
+    }
+    if (h.HWResolution[0] != 600 || h.HWResolution[1] != 600) {
+      fprintf(stderr, "ERROR: unsupported resolution %ux%u, need 600x600\n", h.HWResolution[0], h.HWResolution[1]);
+      status = 1;
+      break;
+    }
+    if (h.cupsWidth == 0 || h.cupsWidth > 65504 || h.cupsHeight == 0 || h.cupsHeight > 65536 ||
+        (uint64_t)h.cupsBytesPerLine != (uint64_t)h.cupsWidth * (bpp / 8)) {
+      fprintf(stderr, "ERROR: bad raster geometry: %u x %u pixels, %u bytes per line\n", h.cupsWidth,
+              h.cupsHeight, h.cupsBytesPerLine);
+      status = 1;
+      break;
+    }
+
     if (!started) {
       resolve_options(&o, num_opts, opts, &h);
       if (o.fine)
@@ -353,24 +372,6 @@ int main(int argc, char *argv[]) {
         break;
       }
       started = 1;
-    }
-
-    unsigned bpp = h.cupsBitsPerPixel;
-    int rgb = h.cupsBitsPerColor == 8 && bpp == 24 && h.cupsColorOrder == CUPS_ORDER_CHUNKED &&
-              (h.cupsColorSpace == CUPS_CSPACE_RGB || h.cupsColorSpace == CUPS_CSPACE_SRGB ||
-               h.cupsColorSpace == CUPS_CSPACE_ADOBERGB);
-    int grey = h.cupsBitsPerColor == 8 && bpp == 8 &&
-               (h.cupsColorSpace == CUPS_CSPACE_W || h.cupsColorSpace == CUPS_CSPACE_SW);
-    if (!rgb && !grey) {
-      fprintf(stderr, "ERROR: unsupported raster: colour space %u, %u bits per colour, %u bits per pixel\n",
-              h.cupsColorSpace, h.cupsBitsPerColor, bpp);
-      status = 1;
-      break;
-    }
-    if (h.HWResolution[0] != 600 || h.HWResolution[1] != 600) {
-      fprintf(stderr, "ERROR: unsupported resolution %ux%u, need 600x600\n", h.HWResolution[0], h.HWResolution[1]);
-      status = 1;
-      break;
     }
 
     xl_page pg;
@@ -457,6 +458,7 @@ int main(int argc, char *argv[]) {
     xl_writer_free(&w);
   } else if (!status) {
     fputs("ERROR: no pages in the job\n", stderr);
+    status = 1;
   }
   for (int p = 0; p < 4; p++) {
     brcd_free(&cache[p]);

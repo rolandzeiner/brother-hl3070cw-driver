@@ -5,8 +5,9 @@
  * input steps, 255 counting as 256) and tetrahedral interpolation. Its
  * in-cell weights behave like 12-bit fixed point that is not exactly f/16;
  * the tables below were fitted to black-box measurements (docs/FORMAT.md):
- * points on cube edges reproduce Brother's output exactly, points on faces
- * and inside the cube to about 99 % of plane values, the rest one level off.
+ * points with one channel between nodes reproduce Brother's output exactly;
+ * for other colours about 93 % come out exact and the rest one level off in
+ * one plane (0.03-0.04 % of all dots).
  *
  * The tables themselves are Brother's data. They are read from the user's
  * own copy of Brother's driver and never stored in this project.
@@ -15,6 +16,7 @@
  */
 
 #include "color.h"
+#include "fsutil.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -48,8 +50,9 @@ int color_table_load(color_table *t, const char *path) {
   FILE *f = fopen(path, "rb");
   if (!f)
     return -1;
-  uint8_t *buf = malloc(COLOR_TABLE_BYTES);
-  int ok = buf && fread(buf, 1, COLOR_TABLE_BYTES, f) == COLOR_TABLE_BYTES;
+  uint8_t *buf = malloc(COLOR_TABLE_BYTES + 1);
+  /* exactly COLOR_TABLE_BYTES: one byte more means a wrong file */
+  int ok = buf && fread(buf, 1, COLOR_TABLE_BYTES + 1, f) == COLOR_TABLE_BYTES;
   fclose(f);
   if (ok)
     decode_le(t, buf);
@@ -127,18 +130,13 @@ int color_tables_extract(const char *brother_filter, const char *dir) {
           fprintf(stderr, "table %s ImpGray=%s %s not found\n", modes[mode], g ? "ON" : "OFF", match_names[m]);
           continue;
         }
-        char path[1024];
-        snprintf(path, sizeof path, "%s/table-%s-gray%s-%s.bin", dir, mode ? "capt" : "600", g ? "on" : "off",
+        char name[64];
+        snprintf(name, sizeof name, "table-%s-gray%s-%s.bin", mode ? "capt" : "600", g ? "on" : "off",
                  match_files[m]);
-        FILE *f = fopen(path, "wb");
-        if (!f || fwrite(p, 1, COLOR_TABLE_BYTES, f) != COLOR_TABLE_BYTES) {
-          fprintf(stderr, "cannot write %s: %s\n", path, strerror(errno));
-          if (f)
-            fclose(f);
+        if (fs_write_file(dir, name, p, COLOR_TABLE_BYTES)) {
           free(d);
           return -1;
         }
-        fclose(f);
         written++;
       }
   free(d);

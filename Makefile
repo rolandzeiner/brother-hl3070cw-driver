@@ -14,8 +14,8 @@ CFLAGS   += $(ARCHS) -std=c11 -Wall -Wextra -Wpedantic -Wno-deprecated-declarati
             -ffp-contract=off -mmacosx-version-min=11.0 -DDRIVER_VERSION='"$(VERSION)"'
 LDLIBS   += -lcups
 
-SRC      := src/rastertohl3070cw.c src/xl2hb.c src/halftone.c src/color.c
-HDR      := src/xl2hb.h src/halftone.h src/color.h
+SRC      := src/rastertohl3070cw.c src/xl2hb.c src/halftone.c src/color.c src/fsutil.c
+HDR      := src/xl2hb.h src/halftone.h src/color.h src/fsutil.h
 BIN      := build/rastertohl3070cw
 
 all: $(BIN)
@@ -32,7 +32,7 @@ test: $(BIN)
 oracle-test: $(BIN)
 	python3 -I tools/jobcheck.py --real
 
-# Regenerate tests/fixtures from Brother's filter (needs Rosetta).
+# Regenerate tests/fixtures.sha256 from Brother's filter (needs Rosetta).
 fixtures: $(BIN) build/faketime.dylib
 	python3 -I tools/fixtures.py make
 
