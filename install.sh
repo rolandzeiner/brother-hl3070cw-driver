@@ -113,8 +113,11 @@ setup_queue() {
         warn "Queue $QUEUE: native driver not available, using the PostScript PPD"
         ppd="$PPD_DIR/$PS_PPD_NAME"
     fi
+    # The PPD is named as a model (its path without the leading slash), not
+    # handed over as a file: only then does CUPS carry the queue's saved
+    # defaults (Color / Mono, paper size ...) over into the new PPD.
     local args
-    args=(-p "$QUEUE" -P "$ppd")
+    args=(-p "$QUEUE" -m "${ppd#/}")
     if [[ -n $URI ]]; then
         # a new queue: enabled, and not shared on the network
         args+=(-v "$URI" -E -o printer-is-shared=false)

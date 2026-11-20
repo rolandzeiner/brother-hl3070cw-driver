@@ -1,24 +1,68 @@
 #!/bin/bash
 # Installer package: runs as root after the files are in place.
 # Copies Brother's data for the native driver, or removes the native PPD when
-# Brother's driver is not installed (the PostScript PPD works without it).
+# Brother's driver is not installed (the PostScript PPD works without it), and
+# gives printers that already use this driver the new PPD.
+# Written for macOS's /bin/bash 3.2. Always exits 0: a problem here must not
+# make Installer report a failed installation when a usable driver is in place.
 set -uo pipefail
 
 readonly DRIVER_DIR=/Library/Printers/HL3070CW-Native
-readonly NATIVE_PPD="/Library/Printers/PPDs/Contents/Resources/Brother HL-3070CW native.ppd"
+readonly PPD_DIR=/Library/Printers/PPDs/Contents/Resources
+readonly NATIVE_PPD="$PPD_DIR/Brother HL-3070CW native.ppd"
+readonly PS_PPD="$PPD_DIR/Brother HL-3070CW PostScript.ppd"
 readonly BROTHER_FILTER=/Library/Printers/Brother/Filter/rastertobrother3040.bundle/Contents/MacOS/rastertobrother3040
 readonly BROTHER_LUT="/Library/Printers/Brother/Brother LUT"
+readonly QUEUE_PPDS=/etc/cups/ppd
 
-umask 022
-if [[ -f $BROTHER_FILTER && -d $BROTHER_LUT ]]; then
-    if "$DRIVER_DIR/rastertohl3070cw" --extract-brother-data "$DRIVER_DIR/data"; then
-        exit 0
+main() {
+    umask 022
+    if ! copy_brother_data; then
+        /bin/rm -f -- "$NATIVE_PPD"
     fi
-    echo "Copying Brother's data failed; removing the native PPD" >&2
-elif [[ -f $DRIVER_DIR/data/table-600-grayon-normal.bin ]]; then
-    exit 0 # a copy from an earlier installation is still there
-else
-    echo "Brother's HL-3070CW driver is not installed; only the PostScript PPD is available" >&2
-fi
-/bin/rm -f -- "$NATIVE_PPD"
+    refresh_queues
+}
+
+# Status 0: the native driver has its data.
+copy_brother_data() {
+    if [[ -f $BROTHER_FILTER && -d $BROTHER_LUT ]]; then
+        if "$DRIVER_DIR/rastertohl3070cw" --extract-brother-data "$DRIVER_DIR/data"; then
+            return 0
+        fi
+        echo "Copying Brother's data failed; removing the native PPD" >&2
+    elif [[ -f $DRIVER_DIR/data/table-600-grayon-normal.bin ]]; then
+        return 0 # a copy from an earlier installation is still there
+    else
+        echo "Brother's HL-3070CW driver is not installed; only the PostScript PPD is available" >&2
+    fi
+    return 1
+}
+
+# A printer keeps its own copy of the PPD from the day it was added, so a new
+# version's options (Print Quality came with 0.4.0) would not show up. Every
+# printer that uses one of this driver's PPDs gets the new file. The PPD is
+# named as a model, not handed over as a file: only then does CUPS carry the
+# printer's saved defaults (Color / Mono, paper size ...) over.
+refresh_queues() {
+    local ppd nick model queue out
+    for ppd in "$QUEUE_PPDS"/*.ppd; do
+        [[ -f $ppd ]] || continue # no printers: the pattern stays as it is
+        nick=$(/usr/bin/sed -n 's/^\*NickName: "\(.*\)"$/\1/p' "$ppd") || continue
+        case "$nick" in
+        "Brother HL-3070CW, native driver (open source)") model=$NATIVE_PPD ;;
+        "Brother HL-3070CW, PostScript (BR-Script 3)") model=$PS_PPD ;;
+        *) continue ;;
+        esac
+        [[ -f $model ]] || continue # the native PPD was removed above
+        queue=${ppd##*/}
+        queue=${queue%.ppd}
+        if out=$(/usr/sbin/lpadmin -p "$queue" -m "${model#/}" 2>&1); then
+            echo "Printer $queue now uses the new ${model##*/}"
+        else
+            echo "Could not update printer $queue: $out" >&2
+        fi
+    done
+}
+
+main "$@"
 exit 0
