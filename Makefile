@@ -40,7 +40,7 @@ $(BIN): $(SRC) $(HDR)
 # Checks without Brother's data: the filter with sanitizers and without
 # Brother's paths, on made-up tiles and tables (tools/selftest.py).
 CHECK_FLAGS := -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer $(BASE) \
-               -DBROTHER_LUT_DIR='"/nonexistent/"' -DBROTHER_FILTER='"/nonexistent/filter"'
+               -DBROTHER_LUT_DIR='"/nonexistent/"' -DBROTHER_FILTER='"/nonexistent/filter"' -DHL3070CW_TEST_HOOKS
 
 build/check/rastertohl3070cw: $(SRC) $(HDR)
 	@mkdir -p build/check

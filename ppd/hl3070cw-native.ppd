@@ -24,6 +24,8 @@
 *cupsManualCopies: True
 *cupsLanguages: "en"
 *cupsFilter: "application/vnd.cups-raster 0 /Library/Printers/HL3070CW-Native/rastertohl3070cw"
+*% Secure Print: the print dialog's "Print with PIN", a PIN of 4 digits
+*cupsJobPassword: "1111"
 
 *% macOS colour matching with Brother's ICC profiles (copied into the driver folder at install)
 *cupsICCQualifier2: BRGray
@@ -189,6 +191,13 @@
 *BRGray OFF/Off: "<</cupsInteger6 2>>setpagedevice"
 *BRGray ON/On: "<</cupsInteger6 1>>setpagedevice"
 *CloseUI: *BRGray
+
+*OpenUI *BREnhanceBlkPrt/Enhance Black Printing: PickOne
+*OrderDependency: 20 AnySetup *BREnhanceBlkPrt
+*DefaultBREnhanceBlkPrt: OFF
+*BREnhanceBlkPrt OFF/Off: "<</cupsInteger7 0>>setpagedevice"
+*BREnhanceBlkPrt ON/On: "<</cupsInteger7 1>>setpagedevice"
+*CloseUI: *BREnhanceBlkPrt
 
 *OpenUI *TonerSaveMode/Toner Save Mode: PickOne
 *OrderDependency: 20 AnySetup *TonerSaveMode

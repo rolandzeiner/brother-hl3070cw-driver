@@ -55,6 +55,8 @@ typedef struct {
   int less_paper_curl;   /* BRImproveOutput=BRLessPaperCurl */
   int fix_intensity;     /* BRImproveOutput=BRFixIntensity */
   int fine;              /* BRResolution=600x2400dpi: 4-bit pixels, Fine bands */
+  int enhance_black;     /* BREnhanceBlkPrt=ON: colour jobs only */
+  const char *hold_key;  /* Secure Print: the job's 4-digit PIN, or NULL */
 } xl_job;
 
 typedef struct {

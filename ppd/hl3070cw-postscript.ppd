@@ -150,6 +150,22 @@
 *InputSlot Manual/Manual Feed: "<</ManualFeed true>>setpagedevice"
 *CloseUI: *InputSlot
 
+*OpenUI *MediaType/Media Type: PickOne
+*OrderDependency: 20 AnySetup *MediaType
+*DefaultMediaType: Plain
+*MediaType Plain/Plain Paper: "<</MediaType (REGULAR)>>setpagedevice"
+*MediaType Thin/Thin Paper: "<</MediaType (THIN)>>setpagedevice"
+*MediaType Thick/Thick Paper: "<</MediaType (THICK)>>setpagedevice"
+*MediaType Thicker/Thicker Paper: "<</MediaType (THICK2)>>setpagedevice"
+*MediaType BOND/Bond Paper: "<</MediaType (BOND)>>setpagedevice"
+*MediaType Env/Envelopes: "<</MediaType (ENVELOPES)>>setpagedevice"
+*MediaType EnvThick/Env. Thick: "<</MediaType (ENVTHICK)>>setpagedevice"
+*MediaType EnvThin/Env. Thin: "<</MediaType (ENVTHIN)>>setpagedevice"
+*MediaType Recycled/Recycled Paper: "<</MediaType (RECYCLED)>>setpagedevice"
+*MediaType Label/Label: "<</MediaType (LABEL)>>setpagedevice"
+*MediaType PostCard/Postcard: "<</MediaType (POSTCARD)>>setpagedevice"
+*CloseUI: *MediaType
+
 *DefaultFont: Courier
 *Font Courier: Standard "(002.004S)" Standard ROM
 *Font Helvetica: Standard "(001.006S)" Standard ROM

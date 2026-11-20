@@ -55,8 +55,28 @@ ESC%-12345X@PJL \n                       (note the space)
 @PJL ENTER LANGUAGE=XL2HB
 ```
 
-Colour jobs also send `@PJL SET IMPROVEGRAY=ON` (its position and rules are
-not checked yet). Lines end in `\n` only. Brother's filter cuts the title to
+Colour jobs also send `@PJL SET IMPROVEGRAY=ON` and `@PJL SET
+UCRGCRFORIMAGE=ON` (see [Colour](#6-colour)).
+
+**Secure Print.** A job with a PIN replaces `@PJL SET HOLD=OFF` with five
+lines; the printer then keeps the job until the PIN is entered on its panel:
+
+```
+@PJL SET COLLATE=OFF
+@PJL COPIES=1                            no SET, as Brother writes it
+@PJL SET HOLD=STORE
+@PJL SET HOLDTYPE=PRIVATE
+@PJL SET HOLDKEY=<PIN>                   4 digits
+```
+
+`JOBNAME` and `USERNAME` that follow are what the panel lists. Brother's
+filter takes the PIN and both names from its own print dialog extension
+(`com.brother.print.PrintSettings.secureprint`, `password`, and `username` /
+`jobname` as arrays of character codes), and only together with Brother's
+PPD; without the names it crashes. A PIN that is not 4 characters long makes
+it print the job without one. The printer's PJL variables allow HOLDKEY 0 to
+9999 (`@PJL INFO VARIABLES`). This driver takes the PIN from the job's IPP
+`job-password` and refuses any PIN other than 4 digits. Lines end in `\n` only. Brother's filter cuts the title to
 80 bytes and does not escape quotes; this driver also replaces `"` with `'`
 and control characters with spaces.
 
@@ -211,8 +231,11 @@ The verification reruns Brother's filter until it produces the common variant.
 
 ReadImage `CommentData` gives the plane (0 K, 1 C, 2 M, 3 Y). PJL:
 `RENDERMODE=COLOR`, `COLORADAPT=ON` for Color/Mono = Auto, and
-`@PJL SET IMPROVEGRAY=ON` after `APTMODE` when Improve Gray is on; the third
-value of the plane table in BeginImage is 1.
+`@PJL SET IMPROVEGRAY=ON` after `APTMODE` when Improve Gray is on, then
+`@PJL SET UCRGCRFORIMAGE=ON` when Enhance Black Printing is on (Color and Auto,
+at 600 dpi and in Fine; never in Mono), both right before `RESOLUTION`; the
+third value of the plane table in BeginImage is 1. Enhance Black changes
+nothing in the image data; the printer acts on the PJL line.
 
 **Halftone.** `0600-{k,c,m}_cache08.bin` hold 80 x 80 tiles,
 `0600-y_cache08.bin` 24 x 24 tiles (`-TS` for Toner Save), all anchored at the
@@ -361,7 +384,6 @@ The remaining differences are in this choice, never in what is printed;
 * **Fine header choice** for the lines the model in section 7 gets wrong
   (about 5 %). They print correctly; only the bytes differ.
 * **Colour interpolation** with two or three channels between nodes (above).
-* **Enhance Black Printing** changed nothing in any test so far.
 * **The printer also has PCL, PCL XL and BR-Script 3 (PostScript 3)
   interpreters** (SNMP `prtInterpreterTable`). This project's PostScript PPD
   uses BR-Script 3; a PostScript page wrapped in `@PJL SET RENDERMODE=GRAYSCALE`

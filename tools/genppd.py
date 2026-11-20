@@ -57,11 +57,11 @@ SIZES = [
     ("EnvChou3", "Envelope MAX", 340, 666),
 ]
 
-MEDIA_TYPES = [  # keyword, display, cupsMediaType
-    ("Plain", "Plain Paper", 0), ("Thin", "Thin Paper", 1), ("Thick", "Thick Paper", 2),
-    ("Thicker", "Thicker Paper", 3), ("BOND", "Bond Paper", 6), ("Env", "Envelopes", 7),
-    ("EnvThick", "Env. Thick", 9), ("EnvThin", "Env. Thin", 8), ("Recycled", "Recycled Paper", 5),
-    ("Label", "Label", 11), ("PostCard", "Postcard", 10),
+MEDIA_TYPES = [  # keyword, display, cupsMediaType, the printer's own name (BR-Script, PJL MEDIATYPE)
+    ("Plain", "Plain Paper", 0, "REGULAR"), ("Thin", "Thin Paper", 1, "THIN"), ("Thick", "Thick Paper", 2, "THICK"),
+    ("Thicker", "Thicker Paper", 3, "THICK2"), ("BOND", "Bond Paper", 6, "BOND"), ("Env", "Envelopes", 7, "ENVELOPES"),
+    ("EnvThick", "Env. Thick", 9, "ENVTHICK"), ("EnvThin", "Env. Thin", 8, "ENVTHIN"),
+    ("Recycled", "Recycled Paper", 5, "RECYCLED"), ("Label", "Label", 11, "LABEL"), ("PostCard", "Postcard", 10, "POSTCARD"),
 ]
 
 
@@ -136,6 +136,8 @@ def native() -> str:
                    "HL-3070CW native", "HL3070NA.PPD")
     lines += [
         f'*cupsFilter: "application/vnd.cups-raster 0 {DRIVER_DIR}/rastertohl3070cw"',
+        "*% Secure Print: the print dialog's \"Print with PIN\", a PIN of 4 digits",
+        '*cupsJobPassword: "1111"',
         "",
         "*% macOS colour matching with Brother's ICC profiles (copied into the driver folder at install)",
         "*cupsICCQualifier2: BRGray",
@@ -157,7 +159,7 @@ def native() -> str:
                       [("Tray1", "Tray 1", "<</ManualFeed false/MediaPosition 1>>setpagedevice"),
                        ("Manual", "Manual Feed", "<</ManualFeed true/MediaPosition 4>>setpagedevice")])
     lines += [""] + pick_one("MediaType", "Media Type", 20, "Plain",
-                             [(k, n, pd("cupsMediaType", v)) for k, n, v in MEDIA_TYPES])
+                             [(k, n, pd("cupsMediaType", v)) for k, n, v, _ in MEDIA_TYPES])
     lines += [""] + pick_one("BRMonoColor", "Color / Mono", 20, "Auto",
                              [("Auto", "Auto", pd("cupsInteger3", 0)), ("FullColor", "Color", pd("cupsInteger3", 1)),
                               ("Mono", "Mono", pd("cupsInteger3", 2))])
@@ -166,6 +168,8 @@ def native() -> str:
                               ("None", "None", pd("cupsInteger5", 2))])
     lines += [""] + pick_one("BRGray", "Improve Gray Color", 20, "ON",
                              [("OFF", "Off", pd("cupsInteger6", 2)), ("ON", "On", pd("cupsInteger6", 1))])
+    lines += [""] + pick_one("BREnhanceBlkPrt", "Enhance Black Printing", 20, "OFF",
+                             [("OFF", "Off", pd("cupsInteger7", 0)), ("ON", "On", pd("cupsInteger7", 1))])
     lines += [""] + pick_one("TonerSaveMode", "Toner Save Mode", 20, "OFF",
                              [("OFF", "Off", pd("cupsInteger1", 0)), ("ON", "On", pd("cupsInteger1", 1))])
     lines += [""] + pick_one("BRImproveOutput", "Improve Print Output", 20, "OFF",
@@ -196,6 +200,9 @@ def postscript() -> str:
     lines += pick_one("InputSlot", "Paper Source", 20, "Tray1",
                       [("Tray1", "Tray 1", "<</ManualFeed false>>setpagedevice"),
                        ("Manual", "Manual Feed", "<</ManualFeed true>>setpagedevice")])
+    # the native PPD's keywords, so presets carry over; the code is what Brother's BR-Script PPD sends
+    lines += [""] + pick_one("MediaType", "Media Type", 20, "Plain",
+                             [(k, n, f"<</MediaType ({ps})>>setpagedevice") for k, n, _, ps in MEDIA_TYPES])
     lines += [""] + fonts()
     return "\n".join(lines) + "\n"
 

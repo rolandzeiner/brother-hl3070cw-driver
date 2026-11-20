@@ -262,7 +262,17 @@ int xl_job_begin(xl_writer *w, FILE *out, const xl_job *job) {
   }
 
   fprintf(out, "\033%%-12345X@PJL \n");
-  fprintf(out, "@PJL SET HOLD=OFF\n");
+  if (job->hold_key) {
+    /* Secure Print: the printer keeps the job until its PIN is entered on the
+     * panel. Brother's lines, in Brother's order; "COPIES" without SET too. */
+    fprintf(out, "@PJL SET COLLATE=OFF\n");
+    fprintf(out, "@PJL COPIES=1\n");
+    fprintf(out, "@PJL SET HOLD=STORE\n");
+    fprintf(out, "@PJL SET HOLDTYPE=PRIVATE\n");
+    fprintf(out, "@PJL SET HOLDKEY=%s\n", job->hold_key);
+  } else {
+    fprintf(out, "@PJL SET HOLD=OFF\n");
+  }
   fprintf(out, "@PJL SET JOBNAME=\"%s\"\n", job->title);
   fprintf(out, "@PJL SET USERNAME=\"%s\"\n", job->user);
   fprintf(out, "@PJL JOB NAME=\"%s\"\n", job->title);
@@ -282,6 +292,8 @@ int xl_job_begin(xl_writer *w, FILE *out, const xl_job *job) {
   fprintf(out, "@PJL SET APTMODE=%s\n", job->fine ? "ON4" : "OFF");
   if (job->render != XL_MONO && job->improve_gray)
     fprintf(out, "@PJL SET IMPROVEGRAY=ON\n");
+  if (job->render != XL_MONO && job->enhance_black)
+    fprintf(out, "@PJL SET UCRGCRFORIMAGE=ON\n");
   fprintf(out, "@PJL SET RESOLUTION=600\n");
   fprintf(out, "@PJL ENTER LANGUAGE=XL2HB\n");
   fprintf(out, ") BROTHER XL2HB;1;0\n");

@@ -134,13 +134,27 @@ Print as usual. The printer's options are in the print dialog, in the section ca
 - **Print Quality**: *Normal* (600 dpi) or *Fine* (2400 dpi class), as in Brother's driver. Fine
   sends more data to the printer, so large pages take longer to start.
 - **Color Mode**: *Normal*, *Vivid* or *None*, as in Brother's driver.
-- **Improve Gray Color**, **Toner Save Mode** and **Improve Print Output** (less paper curl or
-  better toner fixing) work as in Brother's driver.
+- **Improve Gray Color**, **Enhance Black Printing**, **Toner Save Mode** and **Improve Print
+  Output** (less paper curl or better toner fixing) work as in Brother's driver. Enhance Black
+  Printing applies to colour jobs only.
 - **Paper size**, **paper source** (tray or manual feed) and **media type** (plain, thin, thick,
   envelopes, labels and more) are in the usual places.
 
 To make black and white the default, open the print dialog, set **Color / Mono** to **Mono** and
 save the settings as a preset.
+
+### Secure Print
+
+Secure Print keeps a document in the printer until you are there to collect it. In the print
+dialog, open **Print Job Security**, turn on **Print with PIN** and enter 4 digits. The printer
+stores the job and prints nothing. To print it, press **Secure Print** on the printer, choose
+your user name and the document with **+** and **−**, and enter the PIN.
+
+- The PIN must be 4 digits. A job with any other PIN is not printed at all. (Brother's driver
+  prints such a job without a PIN.)
+- The printer lists your macOS user name and the title of the document.
+- Secure Print works with the native driver. The PostScript driver does not offer it.
+- From Terminal: `lp -o job-password=1234 document.pdf`.
 
 ## Troubleshooting
 
@@ -191,14 +205,16 @@ and describe what you printed and what happened. A GitHub account is needed for 
 | Fine quality (2400 dpi class) | The same dots as Brother's driver (in colour: as above); the compressed data matches Brother's for about 95 % of lines | Not available |
 | Paper sizes | All 22 of Brother's driver | All 22 |
 | Tray and manual feed | Yes | Yes |
-| Media types | All 11 | Not yet |
-| Color / Mono / Auto, Color Mode, Improve Gray, Improve Print Output | Yes | Color / Mono only |
+| Media types | All 11 | All 11 |
+| Color / Mono / Auto, Color Mode, Improve Gray, Enhance Black, Improve Print Output | Yes | Color / Mono only |
 | Toner Save | Yes | Yes |
+| Secure Print (PIN) | Yes | No |
 
 The driver has been tested with an HL-3070CW connected over Wi-Fi. Ethernet and USB should work the
 same way but have not been tested.
 
-Black-and-white pages have been printed on paper, in Normal and in Fine quality. Colour has so far
+Black-and-white pages have been printed on paper, in Normal and in Fine quality, and as a Secure
+Print job released on the printer's panel with its PIN. Colour has so far
 only been compared with the data Brother's driver produces, because the test printer's cyan
 cartridge is empty. If a colour page looks wrong, please
 [open an issue](https://github.com/rolandzeiner/brother-hl3070cw-driver/issues).
@@ -285,6 +301,11 @@ it. `make check` and `make lint` repeat those tests, and GitHub runs both on eve
 Like Brother's driver, this one sends the title of the document and your macOS user name to the
 printer with every job, and the connection to the printer is not encrypted. Use the printer on a
 network you trust.
+
+A Secure Print PIN keeps a printout from people at the printer, not from people who can read the
+network or use your Mac. It travels to the printer unencrypted like the rest of the job. When a
+job fails, macOS's printing system writes the job's settings, the PIN included, into its log
+file `/var/log/cups/error_log`, which every user of the Mac can read.
 
 To report a security problem, see [SECURITY.md](SECURITY.md).
 

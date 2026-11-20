@@ -24,6 +24,10 @@
  *   cupsInteger4  BRResolution     0 600dpi, 1 600x2400dpi (Fine)
  *   cupsInteger5  BRColorMatching  0 Normal, 1 Vivid, 2 None
  *   cupsInteger6  BRGray           0 or 1 ON, 2 OFF
+ *   cupsInteger7  BREnhanceBlkPrt  0 OFF, 1 ON
+ *
+ * Secure Print comes as the job's PIN (IPP job-password, "Print with PIN" in
+ * the print dialog), which the PPD allows through *cupsJobPassword.
  *
  * SPDX-License-Identifier: MIT
  */
@@ -145,6 +149,7 @@ typedef struct {
   int fine;
   int matching;   /* 0 normal, 1 vivid, 2 none */
   int improve_gray;
+  int enhance_black;
   const char *input_slot;
   const char *media_type;
 } job_options;
@@ -174,15 +179,47 @@ static void resolve_options(job_options *o, int num, cups_option_t *opts, const 
   o->fine = opt_choice(cupsGetOption("BRResolution", num, opts), res, 2, h->cupsInteger[4] == 1);
   o->matching = opt_choice(cupsGetOption("BRColorMatching", num, opts), match, 3, header_int(h, 5, 2));
   o->improve_gray = opt_choice(cupsGetOption("BRGray", num, opts), onoff, 2, h->cupsInteger[6] != 2);
+  o->enhance_black = opt_choice(cupsGetOption("BREnhanceBlkPrt", num, opts), onoff, 2, h->cupsInteger[7] == 1);
   o->input_slot = cupsGetOption("InputSlot", num, opts);
   o->media_type = cupsGetOption("MediaType", num, opts);
+}
+
+/* Secure Print: the PIN of the job, if it has one, into key (5 bytes).
+ * Returns 0 with key empty (no PIN), 0 with the PIN, or -1 when the job asks
+ * for a PIN this printer cannot take. Such a job is not printed at all:
+ * printing it without the PIN would put a confidential page in the output
+ * tray. (Brother's filter does print it then, without the PIN.) */
+static int secure_print_key(int num, cups_option_t *opts, char key[5]) {
+  key[0] = 0;
+  const char *pin = cupsGetOption("job-password", num, opts);
+  if (!pin)
+    return 0;
+  const char *enc = cupsGetOption("job-password-encryption", num, opts);
+  if (enc && strcasecmp(enc, "none") != 0) {
+    fputs("ERROR: Secure Print: the PIN arrived encrypted, but the printer needs the digits. "
+          "The job was not printed.\n",
+          stderr);
+    return -1;
+  }
+  /* the printer's panel takes digits only, and exactly four */
+  if (strlen(pin) != 4 || strspn(pin, "0123456789") != 4) {
+    fputs("ERROR: Secure Print: the PIN must be 4 digits. The job was not printed.\n", stderr);
+    return -1;
+  }
+  memcpy(key, pin, 5);
+  return 0;
 }
 
 /* ---- Brother data ------------------------------------------------------------- */
 
 static const char *data_dir(void) {
+#ifdef HL3070CW_TEST_HOOKS
+  /* the self-test build only (make check): made-up data instead of Brother's */
   const char *d = getenv("HL3070CW_DATA");
-  return d && *d ? d : DRIVER_DATA_DIR;
+  if (d && *d)
+    return d;
+#endif
+  return DRIVER_DATA_DIR;
 }
 
 /* snprintf into a buffer, failing instead of silently cutting the path */
@@ -355,6 +392,9 @@ int main(int argc, char *argv[]) {
   job.user = user;
   const char *sde = getenv("SOURCE_DATE_EPOCH"); /* reproducible output for tests */
   job.when = sde ? (time_t)strtoll(sde, NULL, 10) : time(NULL);
+  char hold_key[5];
+  int status = secure_print_key(num_opts, opts, hold_key) ? 1 : 0;
+  job.hold_key = hold_key[0] ? hold_key : NULL;
 
   static char outbuf[1 << 16];
   setvbuf(stdout, outbuf, _IOFBF, sizeof outbuf);
@@ -366,10 +406,10 @@ int main(int argc, char *argv[]) {
   memset(cache, 0, sizeof cache);
   color_table *table = NULL;
   uint8_t *in = NULL, *conv = NULL, *bits[4] = {NULL, NULL, NULL, NULL};
-  int page = 0, status = 0, started = 0, colour = 0;
+  int page = 0, started = 0, colour = 0;
   job_options o;
 
-  while (!g_cancelled && cupsRasterReadHeader2(ras, &h)) {
+  while (!status && !g_cancelled && cupsRasterReadHeader2(ras, &h)) {
     page++;
 
     /* The page header is untrusted input: check format and geometry before
@@ -422,6 +462,7 @@ int main(int argc, char *argv[]) {
       job.improve_gray = o.improve_gray;
       job.less_paper_curl = o.improve == 1;
       job.fix_intensity = o.improve == 2;
+      job.enhance_black = o.enhance_black;
       if (load_cache(&cache[0], 'k', o.toner_save, o.fine)) {
         status = 1;
         break;

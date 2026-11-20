@@ -12,6 +12,9 @@ holds for any data:
   at 600 dpi and in Fine, Mono and colour;
 * every paper size and option gives a job that parses and decodes;
 * a Fine job without the Fine data prints in Normal quality;
+* Secure Print holds the job with its PIN, a PIN the printer cannot take
+  stops the job instead of printing it openly, and the PIN appears nowhere
+  but in its PJL line; Enhance Black Printing reaches colour jobs only;
 * damaged print data and damaged data files end in an error message, never
   in a crash or a memory error;
 * the C Fine encoder writes the same bytes as the Python reference
@@ -335,6 +338,52 @@ def check_job_text(data: str, td: str) -> None:
     print("OK   job title and user name cannot break out of the job header")
 
 
+def pjl_header(out: bytes) -> list[bytes]:
+    return out[: out.index(b") BROTHER XL2HB")].split(b"\n")[:-1]
+
+
+def check_secure_print(data: str, td: str) -> None:
+    _, source = bw_page("A6", seed=10, nrows=8)
+    path = os.path.join(td, "secure.ras")
+    rw.write(path, "A6", [source])
+    held = [b"@PJL SET COLLATE=OFF", b"@PJL COPIES=1", b"@PJL SET HOLD=STORE", b"@PJL SET HOLDTYPE=PRIVATE"]
+    for opts in ("BRMonoColor=Mono", "BRMonoColor=FullColor " + FINE):
+        plain = run(data, opts, path)
+        rc, out, err = run(data, opts + " job-password=0815 job-password-encryption=none", path)
+        check(rc == 0, f"Secure Print [{opts}]: filter failed: {err.strip()}")
+        if rc:
+            continue
+        lines = pjl_header(out)
+        check(lines[1:6] == held + [b"@PJL SET HOLDKEY=0815"], f"Secure Print [{opts}]: hold lines wrong: {lines[1:6]}")
+        check(b"@PJL SET HOLD=OFF" not in lines, f"Secure Print [{opts}]: HOLD=OFF as well")
+        check(out.count(b"0815") == 1 and "0815" not in err, f"Secure Print [{opts}]: the PIN appears elsewhere")
+        # apart from the hold lines, the job is the one without a PIN
+        check(out.replace(b"\n".join(held + [b"@PJL SET HOLDKEY=0815"]), b"@PJL SET HOLD=OFF", 1) == plain[1],
+              f"Secure Print [{opts}]: more changed than the hold lines")
+    bad = {"3 digits": "123", "5 digits": "12345", "letters": "abcd", "empty": "", "spaces": "12\\ 4",
+           "sign": "+123", "non-ASCII digits": "١٢٣٤"}
+    for name, pin in bad.items():
+        rc, out, err = run(data, f"BRMonoColor=Mono job-password={pin}", path)
+        check(rc == 1 and not out and "ERROR: Secure Print" in err, f"PIN {name}: printed or no error (status {rc})")
+        check(not pin or pin not in err, f"PIN {name}: the PIN is in the error message")
+    rc, out, err = run(data, "BRMonoColor=Mono job-password=1234 job-password-encryption=sha2-256", path)
+    check(rc == 1 and not out and "encrypted" in err, f"hashed PIN: printed or no error (status {rc})")
+    print(f"OK   Secure Print holds the job with its PIN; {len(bad) + 1} unusable PINs stop the job")
+
+    for opts, want in (("BRMonoColor=FullColor BREnhanceBlkPrt=ON", 1), ("BRMonoColor=Auto BREnhanceBlkPrt=ON BRGray=OFF", 1),
+                       ("BRMonoColor=FullColor BREnhanceBlkPrt=ON " + FINE, 1), ("BRMonoColor=Mono BREnhanceBlkPrt=ON", 0),
+                       ("BRMonoColor=FullColor", 0)):
+        rc, out, err = run(data, opts, path)
+        lines = pjl_header(out) if rc == 0 else []
+        got = lines.count(b"@PJL SET UCRGCRFORIMAGE=ON")
+        check(rc == 0 and got == want, f"Enhance Black [{opts}]: {got} lines, want {want}")
+        if got:
+            i = lines.index(b"@PJL SET UCRGCRFORIMAGE=ON")
+            check(lines[i + 1] == b"@PJL SET RESOLUTION=600" and lines[i - 1].startswith((b"@PJL SET APTMODE", b"@PJL SET IMPROVEGRAY")),
+                  f"Enhance Black [{opts}]: line in the wrong place")
+    print("OK   Enhance Black Printing reaches colour jobs only, before RESOLUTION")
+
+
 def check_cancel(data: str) -> None:
     """Cancelling: cupsd sends SIGTERM and the raster stops; the job must be closed properly."""
     hdr = b"3SaR" + rw.header("A6")
@@ -430,6 +479,7 @@ def main() -> int:
         check_fine_fallback(td)
         check_bad_input(data, td)
         check_job_text(data, td)
+        check_secure_print(data, td)
         check_cancel(data)
         check_fine_encoder(td, a.lines)
     if failures:

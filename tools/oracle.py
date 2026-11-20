@@ -29,12 +29,17 @@ def brother_ppd() -> str:
 FAKETIME = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "build", "faketime.dylib")
 
 
-def run(raster_path: str, options: str = "", job: str = "t", user: str = "rz", fake_time: int | None = None) -> bytes:
+# Brother's own PPD. Its filter does Secure Print only with it (it reads *BRSecureCode there).
+BROTHER_OWN_PPD = "/Library/Printers/PPDs/Contents/Resources/Brother HL-3070CW series CUPS.gz"
+
+
+def run(raster_path: str, options: str = "", job: str = "t", user: str = "rz", fake_time: int | None = None,
+        ppd: str | None = None) -> bytes:
     """Return the printer data Brother's filter produces for a raster file.
 
     fake_time pins the job timestamp (needs build/faketime.dylib, see tools/faketime.c).
     """
-    env = dict(os.environ, PPD=brother_ppd())
+    env = dict(os.environ, PPD=ppd or brother_ppd())
     if fake_time is not None:
         if not os.path.exists(FAKETIME):
             raise FileNotFoundError("build/faketime.dylib missing: make faketime")

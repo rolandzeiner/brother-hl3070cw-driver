@@ -38,10 +38,37 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OURS = os.path.join(ROOT, "build", "rastertohl3070cw")
 
 
+SETTINGS = "com.brother.print.PrintSettings."
+
+
+def brother_options(options: str, title: str, user: str) -> str:
+    """Options as Brother's filter needs them for the same job.
+
+    Brother's filter does not read the job PIN (job-password): its own print
+    dialog extension passes Secure Print as settings of its own, with the PIN
+    and the job and user name as the dialog shows them (arrays of character
+    codes). Without the names it crashes."""
+    out, pin = [], None
+    for opt in options.split():
+        if opt.startswith("job-password="):
+            pin = opt.split("=", 1)[1]
+        else:
+            out.append(opt)
+    if pin is not None:
+        def array(name: str, text: str) -> list[str]:
+            return [f"{SETTINGS}{name}cnt={len(text)}"] + [f"{SETTINGS}{name}..a.{i}..n.={ord(c)}"
+                                                         for i, c in enumerate(text)]
+        out += [f"{SETTINGS}secureprint=ON", f"{SETTINGS}password={pin}"]
+        out += array("username", user) + array("jobname", title)
+    return " ".join(out)
+
+
 def brother_common(raster: str, options: str, title: str, user: str, tries: int = 40,
                    fake_time: int | None = None) -> bytes:
+    ppd = oracle.BROTHER_OWN_PPD if "job-password=" in options else None
+    options = brother_options(options, title, user)
     for _ in range(tries):
-        out = oracle.run(raster, options, job=title, user=user, fake_time=fake_time)
+        out = oracle.run(raster, options, job=title, user=user, fake_time=fake_time, ppd=ppd)
         if b"MANUALDPX" in out:
             continue
         job = pxl.parse(out)
@@ -181,6 +208,14 @@ def cases():
     yield "fine colour Vivid, Improve Gray off", "A6", [page_patches("A6", edge_colours(400))], f"BRMonoColor=FullColor BRColorMatching=Vivid BRGray=OFF {F}", {}
     yield "fine colour None, Toner Save", "A6", [page_patches("A6", edge_colours(400))], f"BRMonoColor=FullColor BRColorMatching=None TonerSaveMode=ON {F}", {}
     yield "fine colour Auto, greys", "A6", [page_patches("A6", [(g, g, g) for g in range(256)])], f"BRMonoColor=Auto {F}", {}
+    # added in 0.4.1, after all others so the inputs above stay the same
+    yield "enhance black colour", "A6", [page_patches("A6", edge_colours(300))], "BRMonoColor=FullColor BREnhanceBlkPrt=ON", {}
+    yield "enhance black Auto, Improve Gray off", "A6", [page_patches("A6", edge_colours(200))], "BRMonoColor=Auto BREnhanceBlkPrt=ON BRGray=OFF", {}
+    yield "enhance black in Mono", "A6", [page_dot("A6")], "BRMonoColor=Mono BREnhanceBlkPrt=ON", {}
+    yield "fine colour enhance black", "A6", [page_patches("A6", edge_colours(200))], f"BRMonoColor=FullColor BREnhanceBlkPrt=ON {F}", {}
+    yield "secure print Mono", "A6", [page_dot("A6")], "BRMonoColor=Mono job-password=1234", {"_title": "Payslips November.pdf", "_user": "roland"}
+    yield "secure print colour, enhance black", "A6", [page_patches("A6", edge_colours(200))], "BRMonoColor=Auto BREnhanceBlkPrt=ON job-password=0042", {}
+    yield "secure print Fine", "A6", [page_random_bw("A6", seed=9, nrows=60)], f"BRMonoColor=Mono job-password=9870 {F}", {}
 
 
 def same_output(options: str, brother: bytes, ours: bytes) -> tuple[bool, str]:
