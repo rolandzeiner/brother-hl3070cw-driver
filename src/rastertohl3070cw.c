@@ -6,9 +6,11 @@
  *   rastertohl3070cw --version
  *
  * Reads CUPS raster (RGB or grey, 8 bits per channel, 600 dpi) and writes
- * Brother's XL2HB printer language. Mono output is byte-identical to Brother's
- * own filter; colour uses Brother's colour tables and dither tiles with an
- * interpolation fitted to Brother's output (see docs/FORMAT.md).
+ * Brother's XL2HB printer language. Mono output at 600 dpi is byte-identical
+ * to Brother's own filter; colour uses Brother's colour tables and dither
+ * tiles with an interpolation fitted to Brother's output; Fine prints the
+ * same dots as Brother's filter with a close model of its compression (see
+ * docs/FORMAT.md).
  *
  * The halftone tiles, colour tables and ICC profiles are Brother's data. They
  * are read from the driver's data folder (filled from Brother's installed
@@ -19,7 +21,7 @@
  *   cupsInteger1  TonerSaveMode    0 OFF, 1 ON
  *   cupsInteger2  BRImproveOutput  0 OFF, 1 BRLessPaperCurl, 2 BRFixIntensity
  *   cupsInteger3  BRMonoColor      0 Auto, 1 FullColor, 2 Mono
- *   cupsInteger4  BRResolution     0 600dpi, 1 600x2400dpi (not supported yet: 600)
+ *   cupsInteger4  BRResolution     0 600dpi, 1 600x2400dpi (Fine)
  *   cupsInteger5  BRColorMatching  0 Normal, 1 Vivid, 2 None
  *   cupsInteger6  BRGray           0 or 1 ON, 2 OFF
  *
@@ -185,25 +187,32 @@ static int path_join(char *buf, size_t cap, const char *dir, const char *sep, co
   return 0;
 }
 
-static int load_cache(brcd_cache *c, char plane, int toner_save) {
+static int load_cache(brcd_cache *c, char plane, int toner_save, int fine) {
   char name[64], path[1024];
-  snprintf(name, sizeof name, "0600-%c%s_cache08.bin", plane, toner_save ? "-TS" : "");
+  snprintf(name, sizeof name, "%s-%c%s_cache08.bin", fine ? "capt" : "0600", plane, toner_save ? "-TS" : "");
   if (path_join(path, sizeof path, data_dir(), "/", name))
     return -1;
   if (access(path, R_OK) != 0 && path_join(path, sizeof path, BROTHER_LUT_DIR, "", name))
     return -1;
-  return brcd_load(c, path);
+  if (brcd_load(c, path))
+    return -1;
+  if (c->fine != fine) {
+    fprintf(stderr, "ERROR: %s is not a %s dither file\n", path, fine ? "Fine" : "600 dpi");
+    brcd_free(c);
+    return -1;
+  }
+  return 0;
 }
 
-static int load_table(color_table *t, int matching, int improve_gray) {
+static int load_table(color_table *t, int matching, int improve_gray, int fine) {
   char path[1024];
-  if (path_join(path, sizeof path, data_dir(), "/", color_table_file((color_matching)matching, improve_gray)))
+  if (path_join(path, sizeof path, data_dir(), "/", color_table_file((color_matching)matching, improve_gray, fine)))
     return -1;
   if (color_table_load(t, path) == 0)
     return 0;
   if (access(path, F_OK) == 0)
     fprintf(stderr, "WARNING: %s is damaged, reading the table from Brother's driver instead\n", path);
-  if (color_table_from_brother(t, BROTHER_FILTER, (color_matching)matching, improve_gray) == 0)
+  if (color_table_from_brother(t, BROTHER_FILTER, (color_matching)matching, improve_gray, fine) == 0)
     return 0;
   fprintf(stderr, "ERROR: Brother's colour tables not found (in %s or Brother's driver). "
                   "Install Brother's HL-3070CW driver, or use the PostScript version of this driver\n",
@@ -220,13 +229,14 @@ static int extract_brother_data(const char *dir) {
     return 1;
   int failed = 0;
   static const char planes[] = "kcmy";
-  for (int p = 0; p < 4; p++)
-    for (int ts = 0; ts < 2; ts++) {
-      char name[64];
-      snprintf(name, sizeof name, "0600-%c%s_cache08.bin", planes[p], ts ? "-TS" : "");
-      if (path_join(path, sizeof path, BROTHER_LUT_DIR, "", name) || fs_copy_file(path, dir, name))
-        failed = 1;
-    }
+  for (int fine = 0; fine < 2; fine++)
+    for (int p = 0; p < 4; p++)
+      for (int ts = 0; ts < 2; ts++) {
+        char name[64];
+        snprintf(name, sizeof name, "%s-%c%s_cache08.bin", fine ? "capt" : "0600", planes[p], ts ? "-TS" : "");
+        if (path_join(path, sizeof path, BROTHER_LUT_DIR, "", name) || fs_copy_file(path, dir, name))
+          failed = 1;
+      }
   if (color_tables_extract(BROTHER_FILTER, dir))
     failed = 1;
   /* ICC profiles for macOS's colour matching (named in the PPD) */
@@ -348,21 +358,21 @@ int main(int argc, char *argv[]) {
 
     if (!started) {
       resolve_options(&o, num_opts, opts, &h);
-      if (o.fine)
-        fputs("INFO: Fine (2400 dpi class) is not supported yet, printing at 600 dpi\n", stderr);
       colour = o.color_mode != 2;
+      job.fine = o.fine;
       job.render = o.color_mode == 2 ? XL_MONO : o.color_mode == 1 ? XL_COLOR : XL_AUTO;
       job.improve_gray = o.improve_gray;
       job.less_paper_curl = o.improve == 1;
       job.fix_intensity = o.improve == 2;
-      if (load_cache(&cache[0], 'k', o.toner_save)) {
+      if (load_cache(&cache[0], 'k', o.toner_save, o.fine)) {
         status = 1;
         break;
       }
       if (colour) {
         table = malloc(sizeof *table);
-        if (!table || load_cache(&cache[1], 'c', o.toner_save) || load_cache(&cache[2], 'm', o.toner_save) ||
-            load_cache(&cache[3], 'y', o.toner_save) || load_table(table, o.matching, o.improve_gray)) {
+        if (!table || load_cache(&cache[1], 'c', o.toner_save, o.fine) ||
+            load_cache(&cache[2], 'm', o.toner_save, o.fine) || load_cache(&cache[3], 'y', o.toner_save, o.fine) ||
+            load_table(table, o.matching, o.improve_gray, o.fine)) {
           status = 1;
           break;
         }
@@ -380,7 +390,9 @@ int main(int argc, char *argv[]) {
     pg.manual_feed = o.input_slot ? !strcasecmp(o.input_slot, "Manual")
                                   : (h.ManualFeed || h.MediaPosition == 4);
     pg.media_type = media_type_for(o.media_type, h.cupsMediaType);
-    pg.width = (h.cupsWidth + 31) & ~31u;
+    /* rounded up to whole 32-bit words: 32 pixels, or 8 at 4 bits per pixel */
+    pg.width = o.fine ? (h.cupsWidth + 7) & ~7u : (h.cupsWidth + 31) & ~31u;
+    size_t bpl = o.fine ? pg.width / 2 : pg.width / 8;
     unsigned height = h.cupsHeight;
     if (h.ImagingBoundingBox[3] > h.ImagingBoundingBox[1]) {
       unsigned bbox_h = (h.ImagingBoundingBox[3] - h.ImagingBoundingBox[1]) * h.HWResolution[1] / 72;
@@ -399,7 +411,7 @@ int main(int argc, char *argv[]) {
     conv = NULL;
     for (int p = 0; p < 4; p++) {
       free(bits[p]);
-      bits[p] = malloc(pg.width / 8);
+      bits[p] = malloc(bpl);
     }
     in = malloc(h.cupsBytesPerLine);
     if (grey)
@@ -433,11 +445,17 @@ int main(int argc, char *argv[]) {
       const uint8_t *rows[4] = {NULL, NULL, NULL, NULL};
       if (colour) {
         int any[4];
-        color_row(table, cache, rgbrow, h.cupsWidth, y, bits, pg.width / 8, any);
+        if (o.fine)
+          color_row_fine(table, cache, rgbrow, h.cupsWidth, y, bits, bpl, any);
+        else
+          color_row(table, cache, rgbrow, h.cupsWidth, y, bits, bpl, any);
         for (int p = 0; p < 4; p++)
           rows[p] = any[p] ? bits[p] : NULL;
       } else {
-        mono_row(&cache[0], rgbrow, h.cupsWidth, y, bits[0], pg.width / 8);
+        if (o.fine)
+          mono_row_fine(&cache[0], rgbrow, h.cupsWidth, y, bits[0], bpl);
+        else
+          mono_row(&cache[0], rgbrow, h.cupsWidth, y, bits[0], bpl);
         rows[0] = bits[0];
       }
       if (xl_page_row(&w, y, rows)) {

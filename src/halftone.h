@@ -19,6 +19,7 @@ typedef struct {
   unsigned w, h;     /* tile size in pixels */
   unsigned stride;   /* bytes per tile row */
   size_t tile;       /* bytes per tile */
+  int fine;          /* "BRCD1": one byte per pixel (4-bit value), else 1 bit */
   uint8_t *body;     /* 256 tiles, index = toner level */
 } brcd_cache;
 
@@ -37,5 +38,12 @@ void mono_row(const brcd_cache *c, const uint8_t *rgb, unsigned width, unsigned 
  * plane p has at least one dot. */
 void color_row(const color_table *t, const brcd_cache caches[4], const uint8_t *rgb, unsigned width,
                unsigned y, uint8_t *const out[4], size_t out_bytes, int any[4]);
+
+/* Fine (4 bits per pixel, two pixels per byte, first in the high nibble):
+ * the same as mono_row and color_row with the Fine tiles ("capt-" files). */
+void mono_row_fine(const brcd_cache *c, const uint8_t *rgb, unsigned width, unsigned y, uint8_t *out,
+                   size_t out_bytes);
+void color_row_fine(const color_table *t, const brcd_cache caches[4], const uint8_t *rgb, unsigned width,
+                    unsigned y, uint8_t *const out[4], size_t out_bytes, int any[4]);
 
 #endif

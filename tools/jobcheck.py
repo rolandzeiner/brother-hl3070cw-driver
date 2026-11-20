@@ -1,4 +1,4 @@
-"""Byte-for-byte comparison of this driver's filter with Brother's filter.
+"""Comparison of this driver's filter with Brother's filter.
 
     python3 -I tools/jobcheck.py            # all cases
     python3 -I tools/jobcheck.py --case grey --keep
@@ -9,6 +9,10 @@ throughout, and about one in twenty carries an extra "@PJL SET MANUALDPX=ON".
 Both variants print the same. The check reruns Brother's filter until it
 produces the common variant, then compares whole jobs. Brother's PRINTLOG
 timestamp is passed to this filter through SOURCE_DATE_EPOCH.
+
+Fine jobs (BRResolution=600x2400dpi) are compared by what they print: the job
+frame and every decoded row must match; the line encoding may differ (see
+tools/fineimage.py). Brother's Fine output does not vary between runs.
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ import oracle  # noqa: E402
 import pxl  # noqa: E402
 import rasterwrite as rw  # noqa: E402
 import roundtrip  # noqa: E402
+import fineimage  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OURS = os.path.join(ROOT, "build", "rastertohl3070cw")
@@ -41,7 +46,7 @@ def brother_common(raster: str, options: str, title: str, user: str, tries: int 
             continue
         job = pxl.parse(out)
         bi = [op for op in job.ops if op.name == "BeginImage"]
-        if bi and bi[0].attrs["CommentData"][7::5][0] != 0x020C:
+        if bi and bi[0].attrs["CommentData"][7::5][0] not in (0x020C, 0):  # 0: Fine
             continue
         return out
     raise RuntimeError("Brother's filter never produced the common variant")
@@ -164,6 +169,27 @@ def cases():
     yield "colour greys", "A6", [page_patches("A6", [(g, g, g) for g in range(256)])], "BRMonoColor=FullColor", {}
     yield "colour black content", "A6", [page_random_bw("A6", seed=4)], "BRMonoColor=FullColor", {}
     yield "colour 2 pages A4", "A4", [page_patches("A4", edge_colours(300)), page_random_bw("A4", seed=5, nrows=80)], "BRMonoColor=FullColor PageSize=A4", {}
+    # Fine (2400 dpi class): compared by image, see same_output()
+    F = fineimage.FINE
+    yield "fine dot", "A6", [page_dot("A6")], f"BRMonoColor=Mono {F}", {}
+    yield "fine random b/w A6", "A6", [page_random_bw("A6", seed=6)], f"BRMonoColor=Mono {F}", {}
+    yield "fine all greys", "A6", [page_patches("A6", [(g, g, g) for g in range(256)])], f"BRMonoColor=Mono {F}", {}
+    yield "fine random colours in Mono", "A6", [page_patches("A6", [tuple(rng.randrange(256) for _ in range(3)) for _ in range(1500)])], f"BRMonoColor=Mono {F}", {}
+    yield "fine toner save greys", "A6", [page_patches("A6", [(g, g, g) for g in range(256)])], f"BRMonoColor=Mono TonerSaveMode=ON {F}", {}
+    yield "fine 2 pages Letter", "Letter", [page_dot("Letter"), page_random_bw("Letter", seed=7, nrows=120)], f"BRMonoColor=Mono PageSize=Letter {F}", {}
+    yield "fine colour edge colours", "A6", [page_patches("A6", edge_colours(800))], f"BRMonoColor=FullColor {F}", {}
+    yield "fine colour Vivid, Improve Gray off", "A6", [page_patches("A6", edge_colours(400))], f"BRMonoColor=FullColor BRColorMatching=Vivid BRGray=OFF {F}", {}
+    yield "fine colour None, Toner Save", "A6", [page_patches("A6", edge_colours(400))], f"BRMonoColor=FullColor BRColorMatching=None TonerSaveMode=ON {F}", {}
+    yield "fine colour Auto, greys", "A6", [page_patches("A6", [(g, g, g) for g in range(256)])], f"BRMonoColor=Auto {F}", {}
+
+
+def same_output(options: str, brother: bytes, ours: bytes) -> tuple[bool, str]:
+    """(match, how): bytes for 600 dpi, the printed image for Fine."""
+    if brother == ours:
+        return True, "bytes"
+    if fineimage.is_fine(options):
+        return fineimage.digest(brother) == fineimage.digest(ours), "image"
+    return False, "bytes"
 
 
 def main() -> int:
@@ -190,26 +216,28 @@ def main() -> int:
             rw.write(path, size, pages, fields=fields)
             b = brother_common(path, options, title, user)
             o = ours(path, options, title, user, printlog_epoch(b))
-            ok = b == o
+            ok, how = same_output(options, b, o)
             failed += not ok
-            print(f"{'OK  ' if ok else 'FAIL'} {name}  ({len(b)} bytes)")
+            print(f"{'OK  ' if ok else 'FAIL'} {name}  ({len(b)} bytes, same {how})")
             if not ok:
                 print("     " + first_difference(b, o))
             if a.keep:
                 open(os.path.join(td, f"{name}.brother.prn"), "wb").write(b)
                 open(os.path.join(td, f"{name}.ours.prn"), "wb").write(o)
         if a.real and not a.case:
-            for size in ("A4", "Letter", "A5"):
+            for size, opts in (("A4", "BRMonoColor=Mono"), ("Letter", "BRMonoColor=Mono"), ("A5", "BRMonoColor=Mono"),
+                               ("A4", f"BRMonoColor=Mono {fineimage.FINE}")):
                 total += 1
                 path = real_document(size, td)
-                b = brother_common(path, "BRMonoColor=Mono", "doc.txt", "rz")
-                o = ours(path, "BRMonoColor=Mono", "doc.txt", "rz", printlog_epoch(b))
-                ok = b == o
+                b = brother_common(path, opts, "doc.txt", "rz")
+                o = ours(path, opts, "doc.txt", "rz", printlog_epoch(b))
+                ok, how = same_output(opts, b, o)
                 failed += not ok
-                print(f"{'OK  ' if ok else 'FAIL'} real text document {size}  ({len(b)} bytes)")
+                fine = " Fine" if fineimage.is_fine(opts) else ""
+                print(f"{'OK  ' if ok else 'FAIL'} real text document {size}{fine}  ({len(b)} bytes, same {how})")
                 if not ok:
                     print("     " + first_difference(b, o))
-    print(f"\n{total - failed} of {total} jobs byte-identical")
+    print(f"\n{total - failed} of {total} jobs identical (Fine: same image)")
     return 1 if failed else 0
 
 

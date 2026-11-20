@@ -35,9 +35,10 @@ static const int weights[4][17] = {
 static const char *const match_names[3] = {"Match Monitor", "Vivid", "None (Table Type)"};
 static const char *const match_files[3] = {"normal", "vivid", "none"};
 
-const char *color_table_file(color_matching m, int improve_gray) {
+const char *color_table_file(color_matching m, int improve_gray, int fine) {
   static char buf[64];
-  snprintf(buf, sizeof buf, "table-600-gray%s-%s.bin", improve_gray ? "on" : "off", match_files[m]);
+  snprintf(buf, sizeof buf, "table-%s-gray%s-%s.bin", fine ? "capt" : "600", improve_gray ? "on" : "off",
+           match_files[m]);
   return buf;
 }
 
@@ -101,12 +102,13 @@ static const uint8_t *find_table(const uint8_t *d, size_t len, const char *mode,
   return found;
 }
 
-int color_table_from_brother(color_table *t, const char *brother_filter, color_matching m, int improve_gray) {
+int color_table_from_brother(color_table *t, const char *brother_filter, color_matching m, int improve_gray,
+                             int fine) {
   size_t len;
   uint8_t *d = read_file(brother_filter, &len);
   if (!d)
     return -1;
-  const uint8_t *p = find_table(d, len, "600dpi", improve_gray, match_names[m]);
+  const uint8_t *p = find_table(d, len, fine ? "CAPT" : "600dpi", improve_gray, match_names[m]);
   if (p)
     decode_le(t, p);
   free(d);

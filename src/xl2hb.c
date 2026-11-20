@@ -6,6 +6,7 @@
  */
 
 #include "xl2hb.h"
+#include "fine.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -278,7 +279,7 @@ int xl_job_begin(xl_writer *w, FILE *out, const xl_job *job) {
   fprintf(out, "@PJL SET COLORADAPT=%s\n", job->render == XL_AUTO ? "ON" : "OFF");
   fprintf(out, "@PJL SET LESSPAPERCURL=%s\n", job->less_paper_curl ? "ON" : "OFF");
   fprintf(out, "@PJL SET FIXINTENSITYUP=%s\n", job->fix_intensity ? "ON" : "OFF");
-  fprintf(out, "@PJL SET APTMODE=OFF\n");
+  fprintf(out, "@PJL SET APTMODE=%s\n", job->fine ? "ON4" : "OFF");
   if (job->render != XL_MONO && job->improve_gray)
     fprintf(out, "@PJL SET IMPROVEGRAY=ON\n");
   fprintf(out, "@PJL SET RESOLUTION=600\n");
@@ -332,7 +333,7 @@ int xl_page_begin(xl_writer *w, const xl_page *page) {
   fwrite(origin, 1, sizeof origin, f);
 
   pxl_ubyte(f, 0, A_ColorMapping);
-  pxl_ubyte(f, 0, A_ColorDepth);
+  pxl_ubyte(f, w->job->fine ? 1 : 0, A_ColorDepth); /* e1Bit, or e4Bit in Fine */
   pxl_uint16(f, page->width, A_SourceWidth);
   pxl_uint16(f, page->height, A_SourceHeight);
   fputc(0xD1, f);
@@ -340,7 +341,8 @@ int xl_page_begin(xl_writer *w, const xl_page *page) {
   pxl_u16le(f, page->height);
   fputc(0xF8, f);
   fputc(A_DestinationSize, f);
-  /* CommentData: 0, 3, colour flag, then per plane 1, 5, plane, 4, method/unit */
+  /* CommentData: 0, 3, colour flag, then per plane 1, 5, plane, 4, method/unit
+   * (Fine: 1, 5, plane, 12, 0) */
   fputc(0xC9, f);
   fputc(0xC1, f);
   pxl_u16le(f, 23);
@@ -351,15 +353,15 @@ int xl_page_begin(xl_writer *w, const xl_page *page) {
     pxl_u16le(f, 1);
     pxl_u16le(f, 5);
     pxl_u16le(f, p);
-    pxl_u16le(f, 4);
-    pxl_u16le(f, plane_table[p]);
+    pxl_u16le(f, w->job->fine ? 12 : 4);
+    pxl_u16le(f, w->job->fine ? 0 : plane_table[p]);
   }
   fputc(0xF8, f);
   fputc(A_CommentData, f);
   pxl_uint16(f, 1, A_PageCopies);
   fputc(OP_BeginImage, f);
 
-  w->bpl = page->width / 8;
+  w->bpl = w->job->fine ? page->width / 2 : page->width / 8;
   for (int p = 0; p < PLANES; p++) {
     w->plane[p].band.len = 0;
     w->plane[p].rows = 0;
@@ -379,8 +381,9 @@ static int flush_band(xl_writer *w, int p) {
     return 0;
   FILE *f = w->out;
   size_t total = 12 + ps->band.len + 4 + 1;
+  unsigned mu = w->job->fine ? 0 : plane_table[p];
   uint8_t hdr[12] = {
-      0x00, 0x04, (uint8_t)(plane_table[p] >> 8), (uint8_t)(plane_table[p] & 0xFF),
+      0x00, w->job->fine ? 0x0C : 0x04, (uint8_t)(mu >> 8), (uint8_t)(mu & 0xFF),
       (uint8_t)(w->bpl >> 8), (uint8_t)(w->bpl & 0xFF),
       (uint8_t)(ps->rows >> 8), (uint8_t)(ps->rows & 0xFF),
       (uint8_t)(total >> 24), (uint8_t)(total >> 16), (uint8_t)(total >> 8), (uint8_t)total,
@@ -448,7 +451,10 @@ int xl_page_row(xl_writer *w, unsigned y, const uint8_t *const rows[PLANES]) {
       ps->start = y;
 
     w->line.len = 0;
-    xl_encode_line(row, w->bpl, plane_table[p] >> 8, plane_table[p] & 0xFF, &w->line);
+    if (w->job->fine)
+      xl_fine_encode_line(row, w->bpl, &w->line);
+    else
+      xl_encode_line(row, w->bpl, plane_table[p] >> 8, plane_table[p] & 0xFF, &w->line);
     size_t len = w->line.len;
     put_u16be(&ps->band, ps->prev_len);
     put_u16be(&ps->band, (unsigned)len);

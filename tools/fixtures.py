@@ -10,6 +10,9 @@ seeds. The repository stores only SHA-256 checksums of Brother's output
 patterns and are not redistributed. `make` also keeps the full outputs in
 tests/fixtures-local/ (ignored by git), which `check` uses to show where a
 difference starts.
+
+Fine cases are checked by image: their checksum is fineimage.digest() of
+Brother's output (job frame plus every decoded row), not of its bytes.
 """
 
 from __future__ import annotations
@@ -22,6 +25,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(__file__))
+import fineimage  # noqa: E402
 import jobcheck  # noqa: E402
 import rasterwrite as rw  # noqa: E402
 
@@ -45,6 +49,10 @@ def fixture_cases():
         yield name, size, pages, options, fields, title, user
 
 
+def checksum(options: str, out: bytes) -> str:
+    return fineimage.digest(out) if fineimage.is_fine(options) else hashlib.sha256(out).hexdigest()
+
+
 def make() -> int:
     os.makedirs(LOCAL, exist_ok=True)
     lines = []
@@ -53,7 +61,7 @@ def make() -> int:
         for name, size, pages, options, fields, title, user in fixture_cases():
             rw.write(path, size, pages, fields=fields)
             out = jobcheck.brother_common(path, options, title, user, fake_time=EPOCH)
-            lines.append(f"{hashlib.sha256(out).hexdigest()}  {slug(name)}")
+            lines.append(f"{checksum(options, out)}  {slug(name)}")
             with gzip.GzipFile(os.path.join(LOCAL, slug(name) + ".prn.gz"), "wb", mtime=0) as f:
                 f.write(out)
             print(f"{slug(name)}: {len(out)} bytes")
@@ -80,13 +88,13 @@ def check() -> int:
             n += 1
             rw.write(path, size, pages, fields=fields)
             got = jobcheck.ours(path, options, title, user, EPOCH)
-            ok = hashlib.sha256(got).hexdigest() == sums[key]
+            ok = checksum(options, got) == sums[key]
             failed += not ok
-            print(f"{'OK  ' if ok else 'FAIL'} {name}")
+            print(f"{'OK  ' if ok else 'FAIL'} {name}{'  (image)' if fineimage.is_fine(options) else ''}")
             local = os.path.join(LOCAL, key + ".prn.gz")
             if not ok and os.path.exists(local):
                 print("     " + jobcheck.first_difference(gzip.open(local).read(), got))
-    print(f"\n{n - failed} of {n} fixtures byte-identical")
+    print(f"\n{n - failed} of {n} fixtures identical (Fine: same image)")
     return 1 if failed else 0
 
 

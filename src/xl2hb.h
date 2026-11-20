@@ -53,13 +53,14 @@ typedef struct {
   int improve_gray;      /* colour jobs: BRGray=ON */
   int less_paper_curl;   /* BRImproveOutput=BRLessPaperCurl */
   int fix_intensity;     /* BRImproveOutput=BRFixIntensity */
+  int fine;              /* BRResolution=600x2400dpi: 4-bit pixels, Fine bands */
 } xl_job;
 
 typedef struct {
   xl_media_size size;
   int manual_feed;       /* 1: manual feed slot, 0: tray 1 */
   const char *media_type;/* Brother media type string, e.g. "dRegular" */
-  unsigned width;        /* SourceWidth in pixels, multiple of 32 */
+  unsigned width;        /* SourceWidth in pixels: a multiple of 32, of 8 in Fine */
   unsigned height;       /* SourceHeight in pixels */
 } xl_page;
 
@@ -81,9 +82,10 @@ typedef struct {
 
 int xl_job_begin(xl_writer *w, FILE *out, const xl_job *job);
 int xl_page_begin(xl_writer *w, const xl_page *page);
-/* Add row y of the current page: rows[p] holds bpl bytes of 1-bit pixels for
- * plane p, or NULL when the plane is blank in this row. Rows must come in
- * order; every row of the page should be passed. */
+/* Add row y of the current page: rows[p] holds bpl bytes of pixels for plane
+ * p (1 bit, or 4 bits in Fine, first pixel in the high bits), or NULL when the
+ * plane is blank in this row. Rows must come in order; every row of the page
+ * should be passed. */
 int xl_page_row(xl_writer *w, unsigned y, const uint8_t *const rows[PLANES]);
 int xl_page_end(xl_writer *w);
 int xl_job_end(xl_writer *w);

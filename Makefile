@@ -5,7 +5,7 @@
 #   make oracle-test  the same live against Brother's filter (needs Rosetta)
 #   make pkg        installer package in build/pkg/
 
-VERSION  ?= 0.3.0
+VERSION  ?= 0.4.0
 ARCHS    ?= -arch arm64 -arch x86_64
 CC       ?= clang
 # -ffp-contract=off: no fused multiply-add, so the grey conversion rounds
@@ -15,8 +15,8 @@ CFLAGS   += $(ARCHS) -std=c11 -Wall -Wextra -Wpedantic -Wno-deprecated-declarati
             -ffp-contract=off -mmacosx-version-min=11.0 -DDRIVER_VERSION='"$(VERSION)"'
 LDLIBS   += -lcups
 
-SRC      := src/rastertohl3070cw.c src/xl2hb.c src/halftone.c src/color.c src/fsutil.c
-HDR      := src/xl2hb.h src/halftone.h src/color.h src/fsutil.h
+SRC      := src/rastertohl3070cw.c src/xl2hb.c src/fine.c src/halftone.c src/color.c src/fsutil.c
+HDR      := src/xl2hb.h src/fine.h src/halftone.h src/color.h src/fsutil.h
 BIN      := build/rastertohl3070cw
 
 all: $(BIN)

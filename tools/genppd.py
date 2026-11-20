@@ -14,7 +14,7 @@ from __future__ import annotations
 import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = "0.2.0"
+VERSION = "0.4.0"
 DRIVER_DIR = "/Library/Printers/HL3070CW-Native"
 MARGIN = 12  # points, all sides
 
@@ -126,14 +126,19 @@ def native() -> str:
         "",
         "*% macOS colour matching with Brother's ICC profiles (copied into the driver folder at install)",
         "*cupsICCQualifier2: BRGray",
-        "*cupsICCQualifier3: Resolution",
+        "*cupsICCQualifier3: BRResolution",
         f'*cupsICCProfile RGB../Normal: "{DRIVER_DIR}/data/profiles/broch08_PL_NM_IG_ON.icm"',
         f'*cupsICCProfile .ON.600dpi/Normal, Improve Gray: "{DRIVER_DIR}/data/profiles/broch08_PL_NM_IG_ON.icm"',
         f'*cupsICCProfile .OFF.600dpi/Normal: "{DRIVER_DIR}/data/profiles/broch08_PL_NM.icm"',
+        f'*cupsICCProfile .ON.600x2400dpi/Fine, Improve Gray: "{DRIVER_DIR}/data/profiles/broch08_PL_Fi_IG_ON.icm"',
+        f'*cupsICCProfile .OFF.600x2400dpi/Fine: "{DRIVER_DIR}/data/profiles/broch08_PL_Fi.icm"',
         "",
+        "*DefaultResolution: 600dpi",
     ]
-    lines += pick_one("Resolution", "Resolution", 10, "600dpi",
-                      [("600dpi", "600 dpi", "<</HWResolution[600 600]/cupsColorOrder 0/cupsColorSpace 1/cupsBitsPerColor 8>>setpagedevice")])
+    raster = "/HWResolution[600 600]/cupsColorOrder 0/cupsColorSpace 1/cupsBitsPerColor 8"
+    lines += pick_one("BRResolution", "Print Quality", 10, "600dpi",
+                      [("600dpi", "Normal (600 x 600 dpi)", f"<<{raster}/cupsInteger4 0>>setpagedevice"),
+                       ("600x2400dpi", "Fine (2400 dpi class)", f"<<{raster}/cupsInteger4 1>>setpagedevice")])
     lines += [""] + page_sizes() + [""]
     lines += pick_one("InputSlot", "Paper Source", 20, "Tray1",
                       [("Tray1", "Tray 1", "<</ManualFeed false/MediaPosition 1>>setpagedevice"),

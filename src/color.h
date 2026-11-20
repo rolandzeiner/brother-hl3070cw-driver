@@ -20,14 +20,16 @@ typedef struct {
 
 typedef enum { MATCH_NORMAL = 0, MATCH_VIVID = 1, MATCH_NONE = 2 } color_matching;
 
-/* File name of a table inside the driver's data directory. */
-const char *color_table_file(color_matching m, int improve_gray);
+/* File name of a table inside the driver's data directory; fine selects the
+ * Fine mode's "CAPT" tables. */
+const char *color_table_file(color_matching m, int improve_gray, int fine);
 
 /* Load a raw table file (COLOR_TABLE_BYTES, little-endian u16). */
 int color_table_load(color_table *t, const char *path);
 
 /* Read a table straight out of Brother's filter binary by its name. */
-int color_table_from_brother(color_table *t, const char *brother_filter, color_matching m, int improve_gray);
+int color_table_from_brother(color_table *t, const char *brother_filter, color_matching m, int improve_gray,
+                             int fine);
 
 /* Write all twelve tables (600 dpi and CAPT) from Brother's filter binary into dir. */
 int color_tables_extract(const char *brother_filter, const char *dir);

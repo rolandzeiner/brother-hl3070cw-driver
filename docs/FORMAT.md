@@ -6,11 +6,14 @@ black-box testing: synthetic pages went through Brother's own macOS filter
 until every pixel could be accounted for. No Brother code was disassembled,
 copied or redistributed.
 
-Status: **600 dpi Mono and colour are implemented** in `src/`. Mono output is
-byte-identical to Brother's; colour is byte-identical for colours on the edges
-of Brother's colour-table cells, greys and black, and differs by one tone
-level for about 7 % of other colours (see [Colour](#6-colour) and
-[Verification](#verification)). The "Fine" mode is not worked out yet.
+Status: **600 dpi Mono and colour and the Fine mode are implemented** in
+`src/`. Mono output at 600 dpi is byte-identical to Brother's; colour is
+byte-identical for colours on the edges of Brother's colour-table cells, greys
+and black, and differs by one tone level for about 7 % of other colours (see
+[Colour](#6-colour) and [Verification](#verification)). Fine prints exactly
+Brother's dots (colour: as at 600 dpi); its line compression is fully decoded,
+and a model of Brother's encoder writes about 95 % of lines byte for byte like
+Brother's (see [Fine](#7-fine-600x2400-dpi-class)).
 
 All multi-byte numbers in the band format are **big-endian**; everything in the
 PCL XL layer is **little-endian** (PCL XL's `eBinaryLowByteFirst`).
@@ -69,7 +72,7 @@ valid PCL XL encodings has not been tested.
 | OpenDataSource `48` | SourceType ubyte 0, DataOrg ubyte 1 |
 | BeginPage `43` | Orientation ubyte 0; MediaSource (`c1 e9 03` = uint16 1001 for tray 1, `c0 02` = ubyte 2 for manual feed); MediaSize (see below); MediaType ubyte_array (see below); SimplexPageMode ubyte 0 |
 | SetPageOrigin `75` | PageOrigin sint16_xy 100,100 (the 12 pt margin at 600 dpi) |
-| BeginImage `b0` | ColorMapping ubyte 0; ColorDepth ubyte 0 (1 bit; 1 = 2 bit in Fine mode); SourceWidth uint16; SourceHeight uint16; DestinationSize uint16_xy (same values); CommentData uint16_array of 23 (plane table, below); PageCopies uint16 1 |
+| BeginImage `b0` | ColorMapping ubyte 0; ColorDepth ubyte 0 (1 bit; 1 = 4 bit in Fine mode); SourceWidth uint16; SourceHeight uint16; DestinationSize uint16_xy (same values); CommentData uint16_array of 23 (plane table, below); PageCopies uint16 1 |
 | ReadImage `b1` | StartLine uint16; BlockHeight uint16; CompressMode ubyte 1; CommentData uint16 = plane (0 = K); then the band as embedded data: `fb <len>` below 256 bytes, else `fa <uint32 len>` |
 | EndImage `b2` | none |
 | EndPage `44` | PageCopies uint16 1 |
@@ -175,7 +178,8 @@ printer prints both. This driver always uses method 2.
 Brother's filter receives RGB (8 bits per channel) and, in Mono mode, does:
 
 ```
-grey  = lrint(0.299 R + 0.587 G + 0.114 B)        double precision, round half to even
+grey  = 0.299 R + 0.587 G + 0.114 B               double precision (no fused multiply-add),
+        rounded to the nearest integer,           exact halves rounded down
 level = tone_curve[255 - grey]                    256 entries, see src/halftone.c
 dot   = tile[level][y mod 80][x mod 80]           tile anchored at the image origin
 ```
@@ -186,8 +190,13 @@ The tiles come from Brother's driver package:
 `"BRCD" "0\0" u16le width u16le height`, then 256 one-bit tiles (one per
 toner level, `height` rows of ⌈width/8⌉ bytes, MSB first). The driver reads
 them at run time; they are not part of this repository. The tone curve was
-measured; 13 of its 256 entries could be either of two neighbouring levels,
-which give identical tiles in both files.
+measured; 13 of its 256 entries could be either of two neighbouring levels
+with identical 600 dpi tiles, and the Fine tiles settle five of them.
+
+Ties: 528 colours whose grey is exactly k + 0.5 in double precision all went
+to k wherever the two levels' tiles differ (Fine and 600 dpi alike), for odd
+and even k. Rounding half to even, which the first version used, agrees only
+where k is even.
 
 ## 5. Brother's non-deterministic output
 
@@ -228,27 +237,123 @@ one level off in one plane, which makes 0.03-0.04 % of all dots differ.
 Finding the exact arithmetic would mean reading Brother's code, which this
 project does not do.
 
+## 7. Fine (600x2400 dpi class)
+
+Print Quality = Fine (`BRResolution=600x2400dpi`) keeps the 600 x 600 dpi
+raster but sends **4 bits per pixel**, values 0 to 15 (the tiles below only
+use 0, 2, 4, ..., 14 and 15). Two pixels per byte, the first in the high
+nibble. Brother's Fine output does not vary between runs (neither method 4
+nor `MANUALDPX`).
+
+**Job.** `@PJL SET APTMODE=ON4` instead of `OFF`. BeginImage: ColorDepth 1
+(`e4Bit`); SourceWidth = image width rounded up to a multiple of 8 pixels
+(not 32); plane table entries `1, 5, p, 12, 0` instead of `1, 5, p, 4,
+method/unit`. Everything else is as at 600 dpi, including the banding (one band
+per plane and run of non-blank rows, 27000-byte limit).
+
+**Bands.** Same layout as at 600 dpi with header `u16 0x000c`, `u16 0`,
+bytes per line (= width / 2), rows, total length. Lines use the scheme below.
+
+**Halftone.** `capt-{k,c,m,y}[-TS]_cache08.bin`, BRCD files with `"1\0"` as
+version: one byte per pixel, the value in the low nibble; the width field
+counts bits, so K and Y tiles are 12 x 12 pixels and C and M 20 x 20. Anchored
+at the image origin; value = `tile[level][y mod h][x mod w]`. Mono uses the
+grey and tone curve of section 4, colour the `CAPT` tables (same names with
+`CAPT` in place of `600dpi`) with the interpolation of section 6. Measured:
+every grey in Mono and Toner Save; table-edge colours in every colour option
+identical; arbitrary colours 0.04 % of pixels off, as at 600 dpi.
+
+### Fine lines
+
+A line is a sequence of one-byte **tokens**, each standing for whole bytes of
+the line, and **headers** that repeat tokens. `V[q]` = 2, 4, 6, 8, 10, 12, 14,
+15 for q = 0..7.
+
+| Token | Bytes |
+|---|---|
+| `0001 c kkk` | k+1 bytes `00` (c = 0) or `FF` (c = 1) |
+| `0010 k qqq` | k+1 bytes `00`, then (V[q], F) |
+| `0011 k qqq` | k+1 bytes `00`, then (0, V[q]) |
+| `01 hhh qqq` | (2h, V[q]) |
+| `100 kk qqq` | k+1 bytes `FF`, then (2q, 0) |
+| `101 kk qqq` | k bytes `00`, then (V[q], 0) |
+| `110 kk qqq` | k bytes `FF`, then (F, 2q) |
+| `111 kk qqq` | k+1 bytes `FF`, then (2q, F) |
+
+(a, b) is one byte with a in the high nibble.
+
+Headers are `0000 xxx1`, a count byte (with 0xFF extension bytes as in
+section 3: `ff ff ff fd` = 1018) and then tokens. With n = count + offset:
+
+| Header | Offset | Meaning |
+|---|---|---|
+| `03 c X` | 6 | X repeated n times |
+| `07 c X Y` | 5 | X Y repeated n times |
+| `0f c X Y Z` | 3 | X Y Z repeated n times |
+| `09 c X t1 .. tn` | 4 | X t1 X t2 ... X tn |
+| `0b c X t1 .. t2n` | 4 | X t1 t2 X t3 t4 ... |
+| `0d c X Y t1 .. tn` | 3 | X Y t1 X Y t2 ... |
+
+Brother never repeats more than 1024 times in one header. A line encodes all
+its bytes; the decoder (`tools/xl2hb_fine.py`) reproduces every line of
+Brother's output tested (over 60 000).
+
+**Brother's tokens** (exact on every line tested): runs of `00` and `FF` go
+out in tokens of 8 bytes, the remainder last. A byte with a partial nibble
+takes in run bytes in front of it, as many as its token allows (`101`: 3
+zeros, `0011` and `0010`: 2, `110`: 3 `FF`, `100` and `111`: 4), the rest of
+the run going out before it. Special cases: an `FF` after a zero run is
+written as `0010 k 111` only after one or two zeros, otherwise it starts an FF
+run; `FF..FF 00` becomes one `100 kk 000` token only when the whole FF run
+fits (up to 4).
+
+**Brother's choice of headers** is a greedy left-to-right pass that always
+takes the longest repeat of the kind it picks. This model (`encode_tokens` in
+`tools/xl2hb_fine.py`, ported to `src/fine.c`) matches 99 % of the lines of a
+macOS-rendered text page, 94 % of a smooth gradient and 93 % of colour
+patches:
+
+1. A run of 12 or more equal tokens: `03`.
+2. Otherwise the first of `0f`, `07`, `09`, `0d`, `0b` that covers 12 tokens
+   or more (`07` never for two equal tokens). For `0b` Brother also looks two
+   tokens further and moves there if that saves as many bytes or more.
+3. Otherwise, at a run of 6 to 11 equal tokens, `0f` from 3 repeats.
+4. Otherwise the first of `0f`, `07`, `0d`, `09`, `0b` that fits decides. At
+   3, 5, 3, 4, 4 or more periods it is written, except when the token two
+   places on starts a run of 3 or more (then step 5) or the run here is 6 or
+   longer (then it counts as a near miss). A near miss (`0f`, `07`, `0d` from
+   2 periods, `09` from 3) goes out as literals: all the tokens it would have
+   covered.
+5. Otherwise a run of 3 or more equal tokens as literals, or one token.
+
+The remaining differences are in this choice, never in what is printed;
+`tools/finecheck.py` lists them per case.
+
 ## Verification
 
-* `make test` compares the filter with checksums of 45 outputs of Brother's
+* `make test` compares the filter with checksums of 55 outputs of Brother's
   filter (`tests/fixtures.sha256`; inputs are regenerated from fixed seeds):
   dots, random black/white pages on A6 and A4, all 256 greys, 1500 random
   colours in Mono, Toner Save, Improve Output, manual feed, media types, all
   22 paper sizes, multi-page jobs, title and user, and in colour: table-edge
-  colours in every colour option, greys and black content. Works without
-  Rosetta. The outputs themselves contain Brother's halftone patterns and are
-  not in the repository; `make fixtures` keeps them in `tests/fixtures-local/`.
+  colours in every colour option, greys and black content; and ten Fine jobs
+  in Mono and colour. Fine checksums cover what is printed (the job without
+  its band encoding, plus every decoded row, `tools/fineimage.py`), the others
+  the bytes. Works without Rosetta. The outputs themselves contain Brother's
+  halftone patterns and are not in the repository; `make fixtures` keeps them
+  in `tests/fixtures-local/`.
 * `make oracle-test` runs the same against Brother's filter live, plus a
   smooth gradient and real text documents rendered by macOS (A4, Letter, A5,
   3.5 MB each). Needs Brother's driver and Rosetta 2.
 * `tools/colorcheck.py` reports how many dots differ for arbitrary colours.
+* `tools/finecheck.py` compares Fine jobs with Brother's: image, frame and the
+  share of lines encoded alike.
 * `tools/roundtrip.py` checks the decoder (`tools/xl2hb.py`) on random pages.
 
 ## Open points
 
-* **Fine (2400 dpi class).** `APTMODE=ON4`, ColorDepth 1 (2 bits per pixel),
-  plane table entries `12, 0`, band header `0x000c`, `capt-*` halftone files and
-  `CAPT` colour tables. Format not worked out.
+* **Fine header choice** for the lines the model in section 7 gets wrong
+  (about 5 %). They print correctly; only the bytes differ.
 * **Colour interpolation** with two or three channels between nodes (above).
 * **Enhance Black Printing** changed nothing in any test so far.
 * **The printer also has PCL, PCL XL and BR-Script 3 (PostScript 3)

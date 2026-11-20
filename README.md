@@ -12,7 +12,8 @@ Keep printing on your Brother HL-3070CW colour laser printer with a current Mac.
 Brother's own macOS driver for this printer contains a program for Intel processors. On Apple
 Silicon Macs it only runs through Rosetta 2, which Apple keeps available only through macOS 27.
 This project is an open-source replacement that runs natively on Apple Silicon and Intel Macs.
-Black-and-white pages come out exactly as with Brother's driver, colour pages practically the same.
+Black-and-white pages come out exactly as with Brother's driver, also in Fine quality, and colour
+pages practically the same.
 
 This project is not made or endorsed by Brother.
 
@@ -62,15 +63,15 @@ without Brother's files.
 ### 2. Download the installer
 
 Open the [latest release](https://github.com/rolandzeiner/brother-hl3070cw-driver/releases/latest).
-Under **Assets**, click the file ending in `.pkg` (for example `HL3070CW-Driver-0.3.0.pkg`). It
+Under **Assets**, click the file ending in `.pkg` (for example `HL3070CW-Driver-0.4.0.pkg`). It
 goes to your Downloads folder.
 
 ### 3. Open the installer
 
 Double-click the downloaded file. The first time, macOS refuses to open it:
 
-> **"HL3070CW-Driver-0.3.0.pkg" Not Opened**
-> Apple could not verify "HL3070CW-Driver-0.3.0.pkg" is free of malware that may harm your Mac or
+> **"HL3070CW-Driver-0.4.0.pkg" Not Opened**
+> Apple could not verify "HL3070CW-Driver-0.4.0.pkg" is free of malware that may harm your Mac or
 > compromise your privacy.
 
 macOS shows this for every installer that is not signed with a paid Apple developer certificate,
@@ -79,7 +80,7 @@ To open it anyway:
 
 1. Click **Done**. Do not click **Move to Trash**.
 2. Open **System Settings** and click **Privacy & Security** in the sidebar.
-3. Scroll down to **Security**. There is a line saying that "HL3070CW-Driver-0.3.0.pkg" was
+3. Scroll down to **Security**. There is a line saying that "HL3070CW-Driver-0.4.0.pkg" was
    blocked to protect your Mac. Click **Open Anyway** next to it. The button appears only for
    about an hour after you tried to open the file; if it is missing, double-click the file again
    first.
@@ -92,7 +93,7 @@ If you are comfortable with Terminal, this removes the download mark from the fi
 which a double-click opens it directly:
 
 ```sh
-xattr -d com.apple.quarantine ~/Downloads/HL3070CW-Driver-0.3.0.pkg
+xattr -d com.apple.quarantine ~/Downloads/HL3070CW-Driver-0.4.0.pkg
 ```
 
 ### 4. Run the installer
@@ -124,6 +125,8 @@ Print as usual. The printer's options are in the print dialog, in the section ca
 - **Color / Mono**: *Auto* lets the printer decide, *Color* always prints in colour, *Mono* always
   in black and white. Choose *Mono* if a colour toner cartridge is empty: the printer refuses
   colour jobs then, but still prints black and white.
+- **Print Quality**: *Normal* (600 dpi) or *Fine* (2400 dpi class), as in Brother's driver. Fine
+  sends more data to the printer, so large pages take longer to start.
 - **Color Mode**: *Normal*, *Vivid* or *None*, as in Brother's driver.
 - **Improve Gray Color**, **Toner Save Mode** and **Improve Print Output** (less paper curl or
   better toner fixing) work as in Brother's driver.
@@ -172,12 +175,12 @@ and describe what you printed and what happened. A GitHub account is needed for 
 |---|---|---|
 | Black and white | Identical to Brother's driver, byte for byte | The printer's own rendering |
 | Colour | Brother's colour tables and halftones; about 99.96 % of all dots identical to Brother's driver | The printer's own rendering |
+| Fine quality (2400 dpi class) | The same dots as Brother's driver (in colour: as above); the compressed data matches Brother's for about 95 % of lines | Not available |
 | Paper sizes | All 22 of Brother's driver | All 22 |
 | Tray and manual feed | Yes | Yes |
 | Media types | All 11 | Not yet |
 | Color / Mono / Auto, Color Mode, Improve Gray, Improve Print Output | Yes | Color / Mono only |
 | Toner Save | Yes | Yes |
-| Fine quality (2400 dpi class) | Not yet; prints at 600 dpi | Not yet |
 
 The driver has been tested with an HL-3070CW connected over Wi-Fi. Ethernet and USB should work the
 same way but have not been tested.
@@ -212,6 +215,7 @@ You need the Xcode command line tools (`xcode-select --install`).
 make                 # build/rastertohl3070cw, a universal binary (arm64 + x86_64)
 make test            # compare with checksums of Brother's output (no Rosetta needed)
 make oracle-test     # compare live with Brother's driver (needs it and Rosetta 2)
+python3 -I tools/finecheck.py --real   # Fine: image and line-by-line comparison
 make pkg             # the installer package, in build/pkg/
 ./install.sh         # install from the source tree (asks for the admin password)
 ./install.sh --queue NAME                              # also switch printer queue NAME to the native driver
@@ -227,19 +231,21 @@ build/rastertohl3070cw 1 user title 1 "BRMonoColor=Mono" page.ras > page.prn
 
 Repository layout:
 
-- `src/`: the CUPS filter. `xl2hb.c` writes the printer language and compresses lines,
-  `halftone.c` and `color.c` turn pixels into toner dots, `fsutil.c` writes files safely when
-  copying Brother's data.
+- `src/`: the CUPS filter. `xl2hb.c` writes the printer language and compresses lines, `fine.c`
+  compresses Fine lines, `halftone.c` and `color.c` turn pixels into toner dots, `fsutil.c` writes
+  files safely when copying Brother's data.
 - `ppd/`: the two PPD files, generated by `tools/genppd.py`.
 - `packaging/`: the installer package (`make pkg`).
 - `tools/`: the Python tools used to work out and check the format: raster writer, PCL XL parser,
   band decoder, measurement scripts and the comparisons with Brother's driver.
-- `tests/fixtures.sha256`: checksums of Brother's output for `make test`. The outputs themselves
-  contain Brother's halftone patterns and are kept out of the repository.
+- `tests/fixtures.sha256`: checksums of Brother's output for `make test` (for Fine jobs, of the
+  decoded image). The outputs themselves contain Brother's halftone patterns and are kept out of the
+  repository.
 - `docs/FORMAT.md`: the printer language.
 
 Brother's driver is the reference for the tests, and it only runs under Rosetta 2. Work that needs
-it, such as the Fine mode, has to happen on macOS 27 or earlier.
+it, such as making the Fine compression match Brother's for the remaining lines, has to happen on
+macOS 27 or earlier. `tools/finecheck.py` compares Fine output with Brother's line by line.
 
 ## Security
 
