@@ -74,9 +74,9 @@ the network. CUPS keeps no record of finished jobs: it would store a job's Secur
 
 To see the printer and its jobs, cancel jobs or pause the printer in a browser, put a reverse proxy
 with a login in front of CUPS (for example Traefik with Authelia) and set `WEB_FROM` to the address
-the proxy connects from. Only that address gets the web pages and the administration, and it needs
-no CUPS login there, so the proxy must not let anyone through without logging in. Clients in
-`ALLOW_FROM` keep printing but get no web pages.
+the proxy connects from. Only that address gets the administration, and it needs no CUPS login
+there, so the proxy must not let anyone through without logging in. Clients in `ALLOW_FROM` can
+print and read the status pages, but not change anything.
 
 ## Announce it for AirPrint
 

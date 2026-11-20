@@ -74,7 +74,13 @@ main() {
     if [[ -n $web ]]; then
         log "Web interface and administration for: $web"
     fi
-    wait "$CUPSD_PID"
+    # wait returns early when a trapped signal (HUP) arrives: keep waiting
+    # until CUPS itself has ended
+    local status=0
+    while kill -0 "$CUPSD_PID" 2>/dev/null; do
+        wait "$CUPSD_PID" || status=$?
+    done
+    exit "$status"
 }
 
 start_cupsd() {
@@ -144,17 +150,13 @@ configure_cups() {
             # administration only from inside the container
             printf '<Location /admin>\n  Order allow,deny\n  Allow from 127.0.0.1\n</Location>\n'
         else
-            # Web pages (GET) for WEB_FROM only; printing (IPP is POST) for the
-            # clients as well
+            # Printing and the read-only status pages for the clients and
+            # WEB_FROM; administration for WEB_FROM only
             printf 'WebInterface Yes\n<Location />\n  Order allow,deny\n  Allow from 127.0.0.1\n'
-            for a in $web; do
+            for a in $allow $web; do
                 printf '  Allow from %s\n' "$a"
             done
-            printf '  <Limit POST>\n    Order allow,deny\n    Allow from 127.0.0.1\n'
-            for a in $allow $web; do
-                printf '    Allow from %s\n' "$a"
-            done
-            printf '  </Limit>\n</Location>\n'
+            printf '</Location>\n'
             printf '<Location /admin>\n  Order allow,deny\n  Allow from 127.0.0.1\n'
             for a in $web; do
                 printf '  Allow from %s\n' "$a"
@@ -254,6 +256,13 @@ die() {
     exit 1
 }
 
+# shellcheck disable=SC2317,SC2329  # called by the HUP trap
+reload() {
+    if [[ -n $CUPSD_PID ]]; then
+        kill -HUP "$CUPSD_PID" 2>/dev/null || true
+    fi
+}
+
 # shellcheck disable=SC2317,SC2329  # called by the TERM trap
 stop() {
     if [[ -n $CUPSD_PID ]]; then
@@ -263,5 +272,6 @@ stop() {
     exit 0
 }
 trap stop TERM INT
+trap reload HUP # docker kill -s HUP print-server: CUPS rereads its configuration
 
 main "$@"
