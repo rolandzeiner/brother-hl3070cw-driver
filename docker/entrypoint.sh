@@ -34,7 +34,7 @@ main() {
     safe "PRINTER_NAME" "$name" '^[A-Za-z0-9_-]{1,64}$'
     safe "PRINTER_URI" "$PRINTER_URI" '^(socket|ipp|lpd)://[A-Za-z0-9.:_/-]+$'
     safe "PRINTER_DRIVER" "$driver" '^(native|postscript)$'
-    safe "LISTEN" "$listen" '^[A-Za-z0-9.:*\[\]]+$'
+    safe "LISTEN" "$listen" '^[]A-Za-z0-9.:*[]+$'  # ] first: inside brackets it is literal there
     safe "ALLOW_FROM" "$allow" '^[A-Za-z0-9.:/@ *-]+$'
     safe "PRINTER_OPTIONS" "$options" '^[A-Za-z0-9=_. -]*$'
     safe "PRINTER_INFO" "$info" '^[^"\\[:cntrl:]]{0,127}$'
