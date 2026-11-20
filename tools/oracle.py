@@ -26,9 +26,19 @@ def brother_ppd() -> str:
     raise FileNotFoundError("Brother HL-3070CW PPD not found; install Brother's driver first")
 
 
-def run(raster_path: str, options: str = "", job: str = "t", user: str = "rz") -> bytes:
-    """Return the printer data Brother's filter produces for a raster file."""
+FAKETIME = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "build", "faketime.dylib")
+
+
+def run(raster_path: str, options: str = "", job: str = "t", user: str = "rz", fake_time: int | None = None) -> bytes:
+    """Return the printer data Brother's filter produces for a raster file.
+
+    fake_time pins the job timestamp (needs build/faketime.dylib, see tools/faketime.c).
+    """
     env = dict(os.environ, PPD=brother_ppd())
+    if fake_time is not None:
+        if not os.path.exists(FAKETIME):
+            raise FileNotFoundError("build/faketime.dylib missing: make faketime")
+        env.update(DYLD_INSERT_LIBRARIES=FAKETIME, FAKE_TIME=str(fake_time))
     with open(raster_path, "rb") as f:
         res = subprocess.run(
             [BROTHER_FILTER, "1", user, job, "1", options],
