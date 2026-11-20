@@ -1,0 +1,91 @@
+name: Bug report
+description: Something doesn't print, or doesn't print right.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this. Please search the existing issues first, in case someone already reported it.
+
+        If the printer itself shows an error (a paper jam, "Replace Toner", a cover open), it's a printer problem, not a driver problem. Brother's support pages cover those.
+
+  - type: dropdown
+    id: driver
+    attributes:
+      label: Which driver do you use?
+      options:
+        - Native driver on a Mac
+        - PostScript driver on a Mac
+        - Native driver on Linux
+        - Print server in Docker
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Driver version
+      description: The version in the installer's file name, or the output of `rastertohl3070cw --version`.
+      placeholder: e.g. 0.4.1
+    validations:
+      required: true
+
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: The macOS version, or the Linux distribution and processor.
+      placeholder: e.g. macOS 27.0.1 on Apple silicon, or Raspberry Pi OS 13 (64-bit)
+    validations:
+      required: true
+
+  - type: input
+    id: brother
+    attributes:
+      label: Brother driver package
+      description: The package of Brother's the driver takes its data from.
+      placeholder: e.g. Brother's macOS driver 5.0.0, or hl3070cwlpr-1.1.2-1.i386.rpm
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you expected, and what came out of the printer instead. A photo or scan of the page helps a lot.
+    validations:
+      required: true
+
+  - type: textarea
+    id: settings
+    attributes:
+      label: Print settings
+      description: The options you chose in the print dialog.
+      placeholder: Color / Mono, Print Quality, paper size and source, media type, Secure Print
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can I reproduce it?
+      placeholder: |
+        1. Open a PDF in Preview
+        2. Print page 3 with these settings
+        3. …
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        On a Mac: the message in the printer's queue window, or the lines about your job in `/var/log/cups/error_log`. On Linux: `/var/log/cups/error_log` or `journalctl -u cups`. For the print server: `docker logs print-server`.
+        Logs can contain a Secure Print PIN, user names and document titles. Remove what you don't want to share.
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you submit
+      options:
+        - label: I'm on the latest release, and the problem is still there.
+          required: true
+        - label: I removed any Secure Print PIN from the logs.
+          required: true
