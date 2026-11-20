@@ -312,7 +312,7 @@ run() {
     fi
 }
 
-# shellcheck disable=SC2329  # called by the EXIT trap
+# shellcheck disable=SC2317,SC2329  # called by the EXIT trap (older shellcheck: SC2317)
 on_exit() {
     local status=$?
     set +e
@@ -321,7 +321,7 @@ on_exit() {
     fi
     exit "$status"
 }
-# shellcheck disable=SC2329  # called by the ERR trap
+# shellcheck disable=SC2317,SC2329  # called by the ERR trap (older shellcheck: SC2317)
 on_err() {
     printf '[ERROR] line %s: "%s" failed\n' "$1" "$2" >&2
 }
