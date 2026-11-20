@@ -47,7 +47,7 @@ PKG      := build/pkg/HL3070CW-Driver-$(VERSION).pkg
 
 pkg: $(PKG)
 
-$(PKG): $(BIN) ppd/hl3070cw-native.ppd ppd/hl3070cw-postscript.ppd uninstall.sh packaging/postinstall packaging/distribution.xml
+$(PKG): $(BIN) LICENSE Makefile ppd/hl3070cw-native.ppd ppd/hl3070cw-postscript.ppd uninstall.sh packaging/postinstall packaging/distribution.xml
 	chmod -R u+w build/pkgroot 2>/dev/null || true
 	rm -rf build/pkgroot build/pkgscripts build/pkg
 	mkdir -p build/pkgroot/Library/Printers/HL3070CW-Native build/pkgroot/Library/Printers/PPDs/Contents/Resources build/pkgscripts build/pkg
@@ -62,7 +62,8 @@ $(PKG): $(BIN) ppd/hl3070cw-native.ppd ppd/hl3070cw-postscript.ppd uninstall.sh 
 	chmod 555 build/pkgroot/Library/Printers
 	pkgbuild --root build/pkgroot --scripts build/pkgscripts --identifier $(PKG_ID) --version $(VERSION) \
 	  --install-location / --ownership recommended build/pkg/driver.pkg
-	cp LICENSE packaging/resources/LICENSE.txt
+	# one line per paragraph, so Installer's narrow licence pane wraps it cleanly
+	awk 'BEGIN { RS = ""; ORS = "\n\n" } { gsub(/\n/, " "); print }' LICENSE > packaging/resources/LICENSE.txt
 	productbuild --distribution packaging/distribution.xml --resources packaging/resources \
 	  --package-path build/pkg --version $(VERSION) $(PKG)
 	rm build/pkg/driver.pkg
