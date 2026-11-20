@@ -22,6 +22,8 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends cups cups-client cups-filters ghostscript poppler-utils \
       libarchive-tools \
  && rm -rf /var/lib/apt/lists/* \
+ # no search for network printers (needs Avahi, which the container has not got)
+ && rm -f /usr/lib/cups/driver/driverless \
  # CUPS's configuration as installed: the entrypoint restores it into the
  # writable /etc/cups at every start (the container runs read-only)
  && cp -a /etc/cups /usr/share/hl3070cw-print-server-etc-cups

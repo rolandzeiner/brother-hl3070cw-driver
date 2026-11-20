@@ -10,6 +10,9 @@
 #   PRINTER_OPTIONS   default options, e.g. "BRMonoColor=Mono"
 #   LISTEN            address:port to listen on, e.g. 10.13.10.3:631 (default *:631)
 #   ALLOW_FROM        who may print: addresses or networks (default @LOCAL)
+#   PRINTER_UUID      the printer's UUID; default: derived from name and LISTEN,
+#                     so it stays the same across restarts (AirPrint clients
+#                     and an Avahi service file identify the printer by it)
 #
 # Brother's Linux driver package for the HL-3070CW (hl3070cwlpr, .rpm or .deb)
 # is expected in /brother; its files are only unpacked, never run.
@@ -39,6 +42,8 @@ main() {
     safe "PRINTER_OPTIONS" "$options" '^[A-Za-z0-9=_. -]*$'
     safe "PRINTER_INFO" "$info" '^[^"\\[:cntrl:]]{0,127}$'
     safe "PRINTER_LOCATION" "$location" '^[^"\\[:cntrl:]]{0,127}$'
+    local uuid=${PRINTER_UUID:-$(stable_uuid "hl3070cw-print-server/$name/$listen")}
+    safe "PRINTER_UUID" "$uuid" '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 
     configure_cups "$listen" "$allow"
     if [[ $driver == native ]]; then
@@ -46,18 +51,39 @@ main() {
     fi
 
     log "Starting CUPS $(dpkg-query -W -f '${Version}' cups-daemon 2>/dev/null || true), filter $("$FILTER" --version)"
+    start_cupsd
+    setup_printer "$name" "$info" "$location" "$driver" "$options"
+    # CUPS gives a new printer a random UUID; set the stable one while CUPS is stopped
+    stop_cupsd
+    sed -i "s|^UUID .*|UUID urn:uuid:$uuid|" /etc/cups/printers.conf
+    start_cupsd
+    log "Printer $name ready (UUID $uuid): $PRINTER_URI, shared on $listen with ${allow}"
+    wait "$CUPSD_PID"
+}
+
+start_cupsd() {
     cupsd -f &
     CUPSD_PID=$!
     local i
     for ((i = 0; i < 60; i++)); do
-        lpstat -r >/dev/null 2>&1 && break
+        lpstat -r >/dev/null 2>&1 && return 0
         sleep 0.5
     done
-    lpstat -r >/dev/null 2>&1 || die "CUPS did not start"
+    die "CUPS did not start"
+}
 
-    setup_printer "$name" "$info" "$location" "$driver" "$options"
-    log "Printer $name ready: $PRINTER_URI, shared on $listen with ${allow}"
-    wait "$CUPSD_PID"
+stop_cupsd() {
+    kill -TERM "$CUPSD_PID"
+    wait "$CUPSD_PID" || true
+    CUPSD_PID=''
+}
+
+# A name-based UUID (version 5 layout from a SHA-1) for a seed string.
+stable_uuid() {
+    local h v
+    h=$(printf '%s' "$1" | sha1sum | cut -c1-32)
+    v=$(printf '%x' $((0x${h:16:1} & 0x3 | 0x8)))
+    printf '%s-%s-5%s-%s%s-%s\n' "${h:0:8}" "${h:8:4}" "${h:13:3}" "$v" "${h:17:3}" "${h:20:12}"
 }
 
 safe() {
