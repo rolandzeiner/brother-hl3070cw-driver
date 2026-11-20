@@ -12,9 +12,22 @@ lpoptions keep working when a queue switches drivers.
 from __future__ import annotations
 
 import os
+import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = "0.4.0"
+
+
+
+def makefile_version() -> str:
+    """The driver version: the one place it is written down is the Makefile."""
+    with open(os.path.join(ROOT, "Makefile"), encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("VERSION"):
+                return line.split("=", 1)[1].strip()
+    raise ValueError("no VERSION in the Makefile")
+
+
+VERSION = makefile_version()
 DRIVER_DIR = "/Library/Printers/HL3070CW-Native"
 MARGIN = 12  # points, all sides
 
@@ -187,14 +200,24 @@ def postscript() -> str:
     return "\n".join(lines) + "\n"
 
 
-def main() -> None:
+def main() -> int:
+    """Write the PPD files; with --check only report whether they are up to date."""
+    check = sys.argv[1:] == ["--check"]
+    stale = 0
     os.makedirs(os.path.join(ROOT, "ppd"), exist_ok=True)
     for name, text in (("hl3070cw-native.ppd", native()), ("hl3070cw-postscript.ppd", postscript())):
         path = os.path.join(ROOT, "ppd", name)
+        if check:
+            with open(path, encoding="latin-1") as f:
+                if f.read() != text:
+                    print(f"{path} is out of date: run python3 -I tools/genppd.py")
+                    stale = 1
+            continue
         with open(path, "w", encoding="latin-1") as f:
             f.write(text)
         print("wrote", path)
+    return stale
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

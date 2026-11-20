@@ -63,7 +63,7 @@ int brcd_load(brcd_cache *c, const char *path) {
   }
   c->w = hdr[6] | (unsigned)hdr[7] << 8;
   c->h = hdr[8] | (unsigned)hdr[9] << 8;
-  if (!c->w || !c->h || c->w > 4096 || c->h > 4096) {
+  if (!c->w || !c->h || c->w > BRCD_MAX_SIDE || c->h > BRCD_MAX_SIDE) {
     fprintf(stderr, "ERROR: %s: bad tile size %ux%u\n", path, c->w, c->h);
     fclose(f);
     return -1;

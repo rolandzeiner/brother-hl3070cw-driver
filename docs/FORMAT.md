@@ -345,6 +345,12 @@ The remaining differences are in this choice, never in what is printed;
 * `make oracle-test` runs the same against Brother's filter live, plus a
   smooth gradient and real text documents rendered by macOS (A4, Letter, A5,
   3.5 MB each). Needs Brother's driver and Rosetta 2.
+* `make check` needs nothing of Brother's: the filter, built with
+  AddressSanitizer and UndefinedBehaviorSanitizer, runs on made-up tiles and
+  tables (`tools/selftest.py`). Black-and-white pages must decode to what went
+  in, at 600 dpi and in Fine; all paper sizes must give jobs that parse;
+  damaged print data and data files must end in an error message; and the C
+  Fine encoder must write what `tools/xl2hb_fine.py` writes.
 * `tools/colorcheck.py` reports how many dots differ for arbitrary colours.
 * `tools/finecheck.py` compares Fine jobs with Brother's: image, frame and the
   share of lines encoded alike.

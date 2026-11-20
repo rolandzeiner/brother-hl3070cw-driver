@@ -19,9 +19,12 @@
 #include "fsutil.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 /* Weights in 1/4096 of a cell for in-cell positions 0..16, by how many of
  * the three channels lie between nodes (1, 2 or 3). */
@@ -61,20 +64,35 @@ int color_table_load(color_table *t, const char *path) {
   return ok ? 0 : -1;
 }
 
+/* Read a whole regular file of at most 64 MB (Brother's filter has 3 MB);
+ * the installer does this as root, so a symlink is refused, not followed. */
 static uint8_t *read_file(const char *path, size_t *len) {
-  FILE *f = fopen(path, "rb");
-  if (!f)
+  *len = 0;
+  int fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
+  if (fd < 0)
     return NULL;
-  fseek(f, 0, SEEK_END);
-  long n = ftell(f);
-  fseek(f, 0, SEEK_SET);
-  uint8_t *d = n > 0 ? malloc((size_t)n) : NULL;
-  if (d && fread(d, 1, (size_t)n, f) != (size_t)n) {
-    free(d);
-    d = NULL;
+  struct stat st;
+  if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size <= 0 || st.st_size > (64 << 20)) {
+    close(fd);
+    errno = EINVAL;
+    return NULL;
   }
-  fclose(f);
-  *len = d ? (size_t)n : 0;
+  size_t n = (size_t)st.st_size, got = 0;
+  uint8_t *d = malloc(n);
+  while (d && got < n) {
+    ssize_t r = read(fd, d + got, n - got);
+    if (r < 0 && errno == EINTR)
+      continue;
+    if (r <= 0)
+      break;
+    got += (size_t)r;
+  }
+  close(fd);
+  if (!d || got != n) {
+    free(d);
+    return NULL;
+  }
+  *len = n;
   return d;
 }
 

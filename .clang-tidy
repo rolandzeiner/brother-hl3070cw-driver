@@ -1,0 +1,35 @@
+# clang-tidy for the filter (make lint). Switched off:
+#   signed-bitwise, narrowing, widening   bytes promote to int in every bit operation here
+#   easily-swappable-parameters           (dir, name) and (width, height) are what they are
+#   branch-clone, no-recursion            the encoders mirror Brother's rules one by one
+#   insecureAPI.DeprecatedOrUnsafeBufferHandling   wants C11 Annex K (fprintf_s), which macOS lacks
+#   err33-c, err34-c                      unchecked fprintf to stderr; atoi in a test helper
+#   signal-handler, sig30-c               the handler only sets a sig_atomic_t flag
+#   include-cleaner, padding              no gain in six small files
+Checks: >
+  -*,
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  misc-*,
+  performance-*,
+  portability-*,
+  readability-misleading-indentation,
+  readability-non-const-parameter,
+  readability-redundant-*,
+  -bugprone-signed-bitwise,
+  -hicpp-signed-bitwise,
+  -bugprone-narrowing-conversions,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-branch-clone,
+  -bugprone-multi-level-implicit-pointer-conversion,
+  -bugprone-assignment-in-if-condition,
+  -bugprone-signal-handler,
+  -cert-sig30-c,
+  -cert-err33-c,
+  -cert-err34-c,
+  -misc-no-recursion,
+  -misc-include-cleaner,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  -clang-analyzer-optin.performance.Padding

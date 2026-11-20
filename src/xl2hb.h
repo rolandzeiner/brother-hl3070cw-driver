@@ -1,6 +1,7 @@
 /*
  * Writer for Brother's XL2HB job format (PJL + a PCL XL subset with
- * compressed 1-bit bands). See docs/FORMAT.md.
+ * compressed bands of 1-bit pixels, or 4-bit pixels in Fine). See
+ * docs/FORMAT.md.
  *
  * SPDX-License-Identifier: MIT
  */

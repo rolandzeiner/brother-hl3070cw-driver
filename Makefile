@@ -2,18 +2,28 @@
 #
 #   make            universal binary (arm64 + x86_64) in build/
 #   make test       byte-for-byte checks against stored reference outputs
-#   make oracle-test  the same live against Brother's filter (needs Rosetta)
+#                   (needs Brother's data files on this Mac)
+#   make check      sanitizer build on made-up data: needs nothing of Brother's
+#   make lint       static analysis of the C code, the scripts and the PPDs
+#   make oracle-test  the same as test, live against Brother's filter (needs Rosetta)
 #   make pkg        installer package in build/pkg/
 
-VERSION  ?= 0.4.0
+VERSION  ?= 0.4.1
 ARCHS    ?= -arch arm64 -arch x86_64
 CC       ?= clang
 # -ffp-contract=off: no fused multiply-add, so the grey conversion rounds
 # exactly like Brother's filter (see src/halftone.c).
 CFLAGS   ?= -O2 -g
-CFLAGS   += $(ARCHS) -std=c11 -Wall -Wextra -Wpedantic -Wno-deprecated-declarations \
-            -ffp-contract=off -mmacosx-version-min=11.0 -DDRIVER_VERSION='"$(VERSION)"'
+WARN     := -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wformat=2 -Wstrict-prototypes \
+            -Wmissing-prototypes -Wvla -Wno-deprecated-declarations
+# The filter reads print data from any user who may print: stack protectors
+# on every function with a buffer, and no uninitialised stack memory.
+HARDEN   := -fstack-protector-strong -ftrivial-auto-var-init=zero -Werror=format-security
+BASE     := -std=c11 $(WARN) -ffp-contract=off -mmacosx-version-min=11.0 -DDRIVER_VERSION='"$(VERSION)"'
+CFLAGS   += $(ARCHS) $(BASE) $(HARDEN)
 LDLIBS   += -lcups
+
+PKG_ID   := io.github.rolandzeiner.hl3070cw-driver
 
 SRC      := src/rastertohl3070cw.c src/xl2hb.c src/fine.c src/halftone.c src/color.c src/fsutil.c
 HDR      := src/xl2hb.h src/fine.h src/halftone.h src/color.h src/fsutil.h
@@ -24,6 +34,43 @@ all: $(BIN)
 $(BIN): $(SRC) $(HDR)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $(SRC) $(LDLIBS)
+	# ad-hoc signature (no certificate) with the hardened runtime: no injected libraries, no debugger
+	codesign --force --sign - --options runtime --identifier $(PKG_ID).filter $@
+
+# Checks without Brother's data: the filter with sanitizers and without
+# Brother's paths, on made-up tiles and tables (tools/selftest.py).
+CHECK_FLAGS := -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer $(BASE) \
+               -DBROTHER_LUT_DIR='"/nonexistent/"' -DBROTHER_FILTER='"/nonexistent/filter"'
+
+build/check/rastertohl3070cw: $(SRC) $(HDR)
+	@mkdir -p build/check
+	$(CC) $(CHECK_FLAGS) -o $@ $(SRC) $(LDLIBS)
+
+build/check/fine_lines: tests/fine_lines.c src/fine.c src/xl2hb.c $(HDR)
+	@mkdir -p build/check
+	$(CC) $(CHECK_FLAGS) -o $@ tests/fine_lines.c src/fine.c src/xl2hb.c
+
+check: build/check/rastertohl3070cw build/check/fine_lines
+	python3 -I tools/selftest.py
+
+# clang-tidy (.clang-tidy) comes with LLVM (brew install llvm), not with Apple's
+# tools; without it, the analyzer built into Apple's clang runs alone.
+TIDY     ?= $(firstword $(shell command -v clang-tidy) $(wildcard /opt/homebrew/opt/llvm/bin/clang-tidy) \
+            $(wildcard /usr/local/opt/llvm/bin/clang-tidy))
+SCRIPTS  := install.sh uninstall.sh packaging/postinstall
+
+lint:
+ifneq ($(TIDY),)
+	$(TIDY) --quiet --warnings-as-errors='*' $(SRC) tests/fine_lines.c -- $(BASE) -isysroot $$(xcrun --show-sdk-path)
+else
+	for f in $(SRC) tests/fine_lines.c; do \
+	  $(CC) --analyze -Xclang -analyzer-output=text -Xclang -analyzer-werror $(BASE) -o /dev/null $$f || exit 1; done
+endif
+	shellcheck $(SCRIPTS)
+	for s in $(SCRIPTS); do /bin/bash -n $$s || exit 1; done
+	cupstestppd -W translations ppd/hl3070cw-native.ppd ppd/hl3070cw-postscript.ppd
+	python3 -I tools/genppd.py --check
+	python3 -I -m compileall -q tools
 
 # Compare with the stored reference outputs (works without Rosetta).
 test: $(BIN)
@@ -42,7 +89,6 @@ build/faketime.dylib: tools/faketime.c
 	$(CC) -arch x86_64 -dynamiclib -o $@ $<
 
 # Installer package for users: build/pkg/HL3070CW-Driver-$(VERSION).pkg (unsigned).
-PKG_ID   := io.github.rolandzeiner.hl3070cw-driver
 PKG      := build/pkg/HL3070CW-Driver-$(VERSION).pkg
 
 pkg: $(PKG)
@@ -72,4 +118,4 @@ clean:
 	chmod -R u+w build/pkgroot 2>/dev/null || true
 	rm -rf build
 
-.PHONY: all test oracle-test fixtures pkg clean
+.PHONY: all test check lint oracle-test fixtures pkg clean

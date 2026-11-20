@@ -439,14 +439,12 @@ int xl_page_row(xl_writer *w, unsigned y, const uint8_t *const rows[PLANES]) {
           blank = 0;
           break;
         }
-    if (ps->rows && (blank || y != ps->start + ps->rows))
-      if (flush_band(w, p))
-        return -1;
+    if (ps->rows && (blank || y != ps->start + ps->rows) && flush_band(w, p))
+      return -1;
     if (blank)
       continue;
-    if (ps->rows && 12 + ps->band.len >= BAND_LIMIT)
-      if (flush_band(w, p))
-        return -1;
+    if (ps->rows && 12 + ps->band.len >= BAND_LIMIT && flush_band(w, p))
+      return -1;
     if (!ps->rows)
       ps->start = y;
 

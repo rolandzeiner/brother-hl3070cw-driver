@@ -48,14 +48,22 @@
 #include "xl2hb.h"
 
 #ifndef DRIVER_VERSION
-#define DRIVER_VERSION "0.2.0-dev"
+#define DRIVER_VERSION "dev" /* the Makefile sets the real one */
 #endif
 
 /* Where this driver keeps its copy of Brother's data, and where Brother's
  * own driver package puts the originals. */
 #define DRIVER_DATA_DIR "/Library/Printers/HL3070CW-Native/data"
+#ifndef BROTHER_FILTER
 #define BROTHER_FILTER "/Library/Printers/Brother/Filter/rastertobrother3040.bundle/Contents/MacOS/rastertobrother3040"
+#endif
 #define BROTHER_PROFILES_DIR "/Library/Printers/Brother/Profiles"
+
+/* The largest page the printer takes, in pixels at 600 dpi with no margins
+ * taken off: 624 pt wide (DL Long Edge, the widest size) and 1152 pt long
+ * (the longest custom size of Brother's driver). */
+#define MAX_PAGE_WIDTH 5200
+#define MAX_PAGE_HEIGHT 9600
 
 static volatile sig_atomic_t g_cancelled;
 
@@ -187,12 +195,20 @@ static int path_join(char *buf, size_t cap, const char *dir, const char *sep, co
   return 0;
 }
 
-static int load_cache(brcd_cache *c, char plane, int toner_save, int fine) {
-  char name[64], path[1024];
+/* Path of a plane's dither file: this driver's copy, else Brother's own. */
+static int tile_path(char *path, size_t cap, char plane, int toner_save, int fine) {
+  char name[64];
   snprintf(name, sizeof name, "%s-%c%s_cache08.bin", fine ? "capt" : "0600", plane, toner_save ? "-TS" : "");
-  if (path_join(path, sizeof path, data_dir(), "/", name))
+  if (path_join(path, cap, data_dir(), "/", name))
     return -1;
-  if (access(path, R_OK) != 0 && path_join(path, sizeof path, BROTHER_LUT_DIR, "", name))
+  if (access(path, R_OK) != 0 && path_join(path, cap, BROTHER_LUT_DIR, "", name))
+    return -1;
+  return 0;
+}
+
+static int load_cache(brcd_cache *c, char plane, int toner_save, int fine) {
+  char path[1024];
+  if (tile_path(path, sizeof path, plane, toner_save, fine))
     return -1;
   if (brcd_load(c, path))
     return -1;
@@ -220,6 +236,22 @@ static int load_table(color_table *t, int matching, int improve_gray, int fine) 
   return -1;
 }
 
+/* Whether the Fine dither files and colour table for this job are there. An
+ * installation made before Fine was supported has none, and gets them only
+ * when the installer runs again while Brother's driver is installed. */
+static int have_fine_data(int toner_save, int colour, int matching, int improve_gray) {
+  static const char planes[] = "kcmy";
+  char path[1024];
+  for (int p = 0; p < (colour ? 4 : 1); p++)
+    if (tile_path(path, sizeof path, planes[p], toner_save, 1) || access(path, R_OK) != 0)
+      return 0;
+  if (!colour)
+    return 1;
+  if (path_join(path, sizeof path, data_dir(), "/", color_table_file((color_matching)matching, improve_gray, 1)))
+    return 0;
+  return access(path, R_OK) == 0 || access(BROTHER_FILTER, R_OK) == 0;
+}
+
 /* Copy what the driver needs out of Brother's installed driver package.
  * Runs as root from the installer: see src/fsutil.c for the safeguards. */
 static int extract_brother_data(const char *dir) {
@@ -227,36 +259,50 @@ static int extract_brother_data(const char *dir) {
   char sub[1024], path[1024];
   if (fs_prepare_dir(dir) || path_join(sub, sizeof sub, dir, "/", "profiles") || fs_prepare_dir(sub))
     return 1;
-  int failed = 0;
+  /* The 600 dpi files are needed; without the Fine ones the driver still
+   * works and prints Fine jobs in Normal quality. */
+  int failed = 0, fine_missing = 0;
   static const char planes[] = "kcmy";
   for (int fine = 0; fine < 2; fine++)
     for (int p = 0; p < 4; p++)
       for (int ts = 0; ts < 2; ts++) {
         char name[64];
         snprintf(name, sizeof name, "%s-%c%s_cache08.bin", fine ? "capt" : "0600", planes[p], ts ? "-TS" : "");
-        if (path_join(path, sizeof path, BROTHER_LUT_DIR, "", name) || fs_copy_file(path, dir, name))
-          failed = 1;
+        if (path_join(path, sizeof path, BROTHER_LUT_DIR, "", name) || fs_copy_file(path, dir, name, "BRCD", 0)) {
+          if (fine)
+            fine_missing = 1;
+          else
+            failed = 1;
+        }
       }
   if (color_tables_extract(BROTHER_FILTER, dir))
     failed = 1;
-  /* ICC profiles for macOS's colour matching (named in the PPD) */
+  /* ICC profiles for macOS's colour matching (named in the PPD): Normal, then Fine */
   static const char *const profiles[] = {"broch08_PL_NM.icm", "broch08_PL_NM_IG_ON.icm", "broch08_PL_Fi.icm",
                                          "broch08_PL_Fi_IG_ON.icm"};
   for (size_t i = 0; i < sizeof profiles / sizeof profiles[0]; i++)
-    if (path_join(path, sizeof path, BROTHER_PROFILES_DIR, "/", profiles[i]) || fs_copy_file(path, sub, profiles[i]))
-      failed = 1;
+    if (path_join(path, sizeof path, BROTHER_PROFILES_DIR, "/", profiles[i]) ||
+        fs_copy_file(path, sub, profiles[i], "acsp", 36)) { /* the ICC profile signature */
+      if (i >= 2)
+        fine_missing = 1;
+      else
+        failed = 1;
+    }
   if (!failed)
     printf("Brother's data copied to %s\n", dir);
+  if (!failed && fine_missing)
+    fputs("Some files for Fine quality were not found; Fine will print in Normal quality\n", stderr);
   return failed;
 }
 
 /* PJL strings are quoted; keep them to 80 bytes of printable text. */
 static void clean_text(char *dst, size_t cap, const char *src) {
-  size_t n = 0;
-  const unsigned char *p = (const unsigned char *)(src ? src : "");
-  for (; *p && n + 1 < cap; p++)
-    dst[n++] = (*p == '"') ? '\'' : (*p < 0x20 || *p == 0x7F) ? ' ' : (char)*p;
-  if (*p && n > 0) {
+  size_t n = 0, len_src = src ? strlen(src) : 0;
+  for (; n < len_src && n + 1 < cap; n++) {
+    unsigned char c = (unsigned char)src[n];
+    dst[n] = (c == '"') ? '\'' : (c < 0x20 || c == 0x7F) ? ' ' : (char)c;
+  }
+  if (n < len_src && n > 0) {
     /* cut off: drop the last character only if it was split */
     size_t i = n - 1;
     while (i > 0 && ((unsigned char)dst[i] & 0xC0) == 0x80)
@@ -328,9 +374,9 @@ int main(int argc, char *argv[]) {
 
     /* The page header is untrusted input: check format and geometry before
      * anything is allocated or written. libcups does not tie the bytes per
-     * line to the width. The PCL XL fields hold 16 bits, so a page is at most
-     * 65504 pixels wide (65535 after rounding to 32) and 65536 rows high
-     * (the last row past the imageable area is dropped). */
+     * line to the width. A page larger than the printer can print is refused:
+     * nothing useful would come out, and what the printer's firmware does
+     * with such a page is unknown. */
     unsigned bpp = h.cupsBitsPerPixel;
     int rgb = h.cupsBitsPerColor == 8 && bpp == 24 && h.cupsColorOrder == CUPS_ORDER_CHUNKED &&
               (h.cupsColorSpace == CUPS_CSPACE_RGB || h.cupsColorSpace == CUPS_CSPACE_SRGB ||
@@ -348,10 +394,16 @@ int main(int argc, char *argv[]) {
       status = 1;
       break;
     }
-    if (h.cupsWidth == 0 || h.cupsWidth > 65504 || h.cupsHeight == 0 || h.cupsHeight > 65536 ||
+    if (h.cupsWidth == 0 || h.cupsHeight == 0 ||
         (uint64_t)h.cupsBytesPerLine != (uint64_t)h.cupsWidth * (bpp / 8)) {
       fprintf(stderr, "ERROR: bad raster geometry: %u x %u pixels, %u bytes per line\n", h.cupsWidth,
               h.cupsHeight, h.cupsBytesPerLine);
+      status = 1;
+      break;
+    }
+    if (h.cupsWidth > MAX_PAGE_WIDTH || h.cupsHeight > MAX_PAGE_HEIGHT) {
+      fprintf(stderr, "ERROR: the page is larger than the printer can print: %u x %u pixels, at most %d x %d\n",
+              h.cupsWidth, h.cupsHeight, MAX_PAGE_WIDTH, MAX_PAGE_HEIGHT);
       status = 1;
       break;
     }
@@ -359,6 +411,12 @@ int main(int argc, char *argv[]) {
     if (!started) {
       resolve_options(&o, num_opts, opts, &h);
       colour = o.color_mode != 2;
+      if (o.fine && !have_fine_data(o.toner_save, colour, o.matching, o.improve_gray)) {
+        fputs("WARNING: The data for Fine quality is not installed, printing in Normal quality. "
+              "Run the driver's installer again while Brother's driver is installed.\n",
+              stderr);
+        o.fine = 0;
+      }
       job.fine = o.fine;
       job.render = o.color_mode == 2 ? XL_MONO : o.color_mode == 1 ? XL_COLOR : XL_AUTO;
       job.improve_gray = o.improve_gray;
@@ -400,11 +458,6 @@ int main(int argc, char *argv[]) {
         height = bbox_h;
     }
     pg.height = height;
-    if (pg.width > 65535 || pg.height > 65535) {
-      fputs("ERROR: page too large\n", stderr);
-      status = 1;
-      break;
-    }
 
     free(in);
     free(conv);
@@ -430,8 +483,10 @@ int main(int argc, char *argv[]) {
       if (g_cancelled)
         break;
       if (cupsRasterReadPixels(ras, in, h.cupsBytesPerLine) < h.cupsBytesPerLine) {
-        fprintf(stderr, "ERROR: raster data ends early on page %d\n", page);
-        status = 1;
+        if (!g_cancelled) { /* a cancelled job ends like this without being an error */
+          fprintf(stderr, "ERROR: raster data ends early on page %d\n", page);
+          status = 1;
+        }
         break;
       }
       if (y >= height)

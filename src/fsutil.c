@@ -74,8 +74,10 @@ int fs_write_file(const char *dir, const char *name, const void *data, size_t le
   return 0;
 }
 
-int fs_copy_file(const char *src, const char *dir, const char *name) {
-  int fd = open(src, O_RDONLY);
+int fs_copy_file(const char *src, const char *dir, const char *name, const char *magic, size_t magic_off) {
+  /* O_NOFOLLOW: a symlink in place of the file is refused, not read as root;
+   * O_NONBLOCK: a FIFO or device there cannot make the installer hang */
+  int fd = open(src, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
   if (fd < 0) {
     fprintf(stderr, "cannot read %s: %s\n", src, strerror(errno));
     return -1;
@@ -83,6 +85,11 @@ int fs_copy_file(const char *src, const char *dir, const char *name) {
   struct stat st;
   if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size > (64 << 20)) {
     fprintf(stderr, "%s is not a regular file of a sensible size\n", src);
+    close(fd);
+    return -1;
+  }
+  if (geteuid() == 0 && (st.st_uid != 0 || (st.st_mode & S_IWOTH))) {
+    fprintf(stderr, "%s must belong to root and not be writable by everyone\n", src);
     close(fd);
     return -1;
   }
@@ -99,8 +106,11 @@ int fs_copy_file(const char *src, const char *dir, const char *name) {
   }
   close(fd);
   int rc = -1;
+  size_t ml = magic ? strlen(magic) : 0;
   if (!buf || got != len)
     fprintf(stderr, "cannot read %s\n", src);
+  else if (ml && (len < magic_off + ml || memcmp(buf + magic_off, magic, ml) != 0))
+    fprintf(stderr, "%s is not the kind of file expected there\n", src);
   else
     rc = fs_write_file(dir, name, buf, len);
   free(buf);

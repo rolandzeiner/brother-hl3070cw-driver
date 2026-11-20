@@ -1,5 +1,5 @@
 /*
- * Mono halftoning with Brother's dither tiles ("BRCD" cache files).
+ * Halftoning with Brother's dither tiles ("BRCD" cache files).
  *
  * SPDX-License-Identifier: MIT
  */
@@ -12,8 +12,14 @@
 
 #include "color.h"
 
-/* Where Brother's driver package installs its halftone data. */
+/* Where Brother's driver package installs its halftone data. (The self-test
+ * build points this somewhere empty, see the Makefile.) */
+#ifndef BROTHER_LUT_DIR
 #define BROTHER_LUT_DIR "/Library/Printers/Brother/Brother LUT/"
+#endif
+
+/* Brother's tiles are at most 160 x 80; anything far beyond is a wrong file. */
+#define BRCD_MAX_SIDE 512
 
 typedef struct {
   unsigned w, h;     /* tile size in pixels */
