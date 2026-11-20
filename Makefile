@@ -3,8 +3,9 @@
 #   make            universal binary (arm64 + x86_64) in build/
 #   make test       byte-for-byte checks against stored reference outputs
 #   make oracle-test  the same live against Brother's filter (needs Rosetta)
+#   make pkg        installer package in build/pkg/
 
-VERSION  ?= 0.2.0-dev
+VERSION  ?= 0.3.0
 ARCHS    ?= -arch arm64 -arch x86_64
 CC       ?= clang
 # -ffp-contract=off: no fused multiply-add, so the grey conversion rounds
@@ -40,7 +41,34 @@ build/faketime.dylib: tools/faketime.c
 	@mkdir -p build
 	$(CC) -arch x86_64 -dynamiclib -o $@ $<
 
+# Installer package for users: build/pkg/HL3070CW-Driver-$(VERSION).pkg (unsigned).
+PKG_ID   := io.github.rolandzeiner.hl3070cw-driver
+PKG      := build/pkg/HL3070CW-Driver-$(VERSION).pkg
+
+pkg: $(PKG)
+
+$(PKG): $(BIN) ppd/hl3070cw-native.ppd ppd/hl3070cw-postscript.ppd uninstall.sh packaging/postinstall packaging/distribution.xml
+	chmod -R u+w build/pkgroot 2>/dev/null || true
+	rm -rf build/pkgroot build/pkgscripts build/pkg
+	mkdir -p build/pkgroot/Library/Printers/HL3070CW-Native build/pkgroot/Library/Printers/PPDs/Contents/Resources build/pkgscripts build/pkg
+	install -m 755 $(BIN) build/pkgroot/Library/Printers/HL3070CW-Native/rastertohl3070cw
+	install -m 755 uninstall.sh build/pkgroot/Library/Printers/HL3070CW-Native/uninstall.sh
+	install -m 644 ppd/hl3070cw-native.ppd "build/pkgroot/Library/Printers/PPDs/Contents/Resources/Brother HL-3070CW native.ppd"
+	install -m 644 ppd/hl3070cw-postscript.ppd "build/pkgroot/Library/Printers/PPDs/Contents/Resources/Brother HL-3070CW PostScript.ppd"
+	install -m 755 packaging/postinstall build/pkgscripts/postinstall
+	# folder modes as macOS has them, so the package changes none of them
+	chmod 755 build/pkgroot/Library build/pkgroot/Library/Printers/PPDs build/pkgroot/Library/Printers/PPDs/Contents \
+	  build/pkgroot/Library/Printers/PPDs/Contents/Resources build/pkgroot/Library/Printers/HL3070CW-Native
+	chmod 555 build/pkgroot/Library/Printers
+	pkgbuild --root build/pkgroot --scripts build/pkgscripts --identifier $(PKG_ID) --version $(VERSION) \
+	  --install-location / --ownership recommended build/pkg/driver.pkg
+	cp LICENSE packaging/resources/LICENSE.txt
+	productbuild --distribution packaging/distribution.xml --resources packaging/resources \
+	  --package-path build/pkg --version $(VERSION) $(PKG)
+	rm build/pkg/driver.pkg
+
 clean:
+	chmod -R u+w build/pkgroot 2>/dev/null || true
 	rm -rf build
 
-.PHONY: all test oracle-test fixtures clean
+.PHONY: all test oracle-test fixtures pkg clean

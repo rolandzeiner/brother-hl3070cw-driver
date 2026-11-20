@@ -1,0 +1,24 @@
+#!/bin/bash
+# Installer package: runs as root after the files are in place.
+# Copies Brother's data for the native driver, or removes the native PPD when
+# Brother's driver is not installed (the PostScript PPD works without it).
+set -uo pipefail
+
+readonly DRIVER_DIR=/Library/Printers/HL3070CW-Native
+readonly NATIVE_PPD="/Library/Printers/PPDs/Contents/Resources/Brother HL-3070CW native.ppd"
+readonly BROTHER_FILTER=/Library/Printers/Brother/Filter/rastertobrother3040.bundle/Contents/MacOS/rastertobrother3040
+readonly BROTHER_LUT="/Library/Printers/Brother/Brother LUT"
+
+umask 022
+if [[ -f $BROTHER_FILTER && -d $BROTHER_LUT ]]; then
+    if "$DRIVER_DIR/rastertohl3070cw" --extract-brother-data "$DRIVER_DIR/data"; then
+        exit 0
+    fi
+    echo "Copying Brother's data failed; removing the native PPD" >&2
+elif [[ -f $DRIVER_DIR/data/table-600-grayon-normal.bin ]]; then
+    exit 0 # a copy from an earlier installation is still there
+else
+    echo "Brother's HL-3070CW driver is not installed; only the PostScript PPD is available" >&2
+fi
+/bin/rm -f -- "$NATIVE_PPD"
+exit 0

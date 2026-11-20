@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>Brother HL-3070CW Driver</title>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <license file="LICENSE.txt" mime-type="text/plain"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+    <options customize="never" require-scripts="true" hostArchitectures="arm64,x86_64"/>
+    <volume-check>
+        <allowed-os-versions>
+            <os-version min="11.0"/>
+        </allowed-os-versions>
+    </volume-check>
+    <domains enable_localSystem="true" enable_anywhere="false" enable_currentUserHome="false"/>
+    <choices-outline>
+        <line choice="default"/>
+    </choices-outline>
+    <choice id="default" title="Brother HL-3070CW Driver">
+        <pkg-ref id="io.github.rolandzeiner.hl3070cw-driver"/>
+    </choice>
+    <pkg-ref id="io.github.rolandzeiner.hl3070cw-driver">driver.pkg</pkg-ref>
+</installer-gui-script>
