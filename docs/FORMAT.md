@@ -211,16 +211,19 @@ The verification reruns Brother's filter until it produces the common variant.
   in Brother's filter after names like `HL-30xxC 600dpi ImpGray=ON Ver1.01
   (2011/03/29) Match Monitor` (nodes in R, G, B order, four u16 C, M, Y, K per
   node; variants for Match Monitor / Vivid / None, Improve Gray on/off, 600 dpi
-  and CAPT). The interpolation is tetrahedral, with nodes every 16 input steps
-  (255 counts as 256) and results rounded half up. Along the table edges, the
-  weight for the in-cell position f = v & 15 is not exactly f/16: it is exact
-  for f = 4, 8, 12, otherwise off by about 1/1000 of a cell in a fixed
-  direction per f (towards the cell's end node for f = 3, 5, 7, 10, 14, 15,
-  towards its start for f = 1, 2, 6, 9, 11, 13), with w(16 - f) = 1 - w(f).
-  A weight table built from the measured intervals reproduces every edge
-  measurement; inside the cube, 98.2 % of plane values (93 % of colours) come
-  out exact and the rest are one level off. The arithmetic behind the weights
-  is not found yet (no such table is stored in the binary).
+  and CAPT). The interpolation is tetrahedral (Kuhn split: sort the in-cell
+  fractions), nodes every 16 input steps (255 counts as 256), result rounded
+  half up. The weights behave like 12-bit fixed point: in 1/4096 of a cell,
+  W(f) = 256 f + e(f) with e = 0 at f = 4, 8, 12, small non-zero integers
+  elsewhere and e(16 - f) = -e(f). Points with one or two channels between
+  nodes (cube edges and faces) fit such models without a single exception.
+  Points with all three channels between nodes do not: no linear or common
+  fixed-point model found reproduces all of them. Best result: 93 % of random
+  colours exact, the rest one level off in one plane. Going further would
+  mean reading Brother's code, which this project does not do.
+  Black-box tests in tools/ (measure_color.py, colormodel.py); a per-position
+  weight table: W = [0, 252, 506, 773, 1024, 1281, 1533, 1793, 2048, 2303,
+  2563, 2815, 3072, 3323, 3590, 3844, 4096].
 * **The printer also has PCL, PCL XL and BR-Script 3 (PostScript 3)
   interpreters** (SNMP `prtInterpreterTable`). A PostScript page wrapped in
   `@PJL SET RENDERMODE=GRAYSCALE` / `@PJL ENTER LANGUAGE=POSTSCRIPT` prints
