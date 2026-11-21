@@ -88,7 +88,9 @@ start_cupsd() {
     CUPSD_PID=$!
     local i
     for ((i = 0; i < 60; i++)); do
-        lpstat -r >/dev/null 2>&1 && return 0
+        # lpstat -r exits 0 whether or not CUPS answers: go by what it says
+        [[ $(LC_ALL=C lpstat -r 2>/dev/null) == 'scheduler is running' ]] && return 0
+        kill -0 "$CUPSD_PID" 2>/dev/null || die "CUPS ended while starting"
         sleep 0.5
     done
     die "CUPS did not start"
