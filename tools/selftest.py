@@ -17,6 +17,8 @@ holds for any data:
   but in its PJL line; Enhance Black Printing reaches colour jobs only;
 * damaged print data and damaged data files end in an error message, never
   in a crash or a memory error;
+* a cancelled job is never an error, starts no page it has no line of, and
+  what it has started is sent whole;
 * the C Fine encoder writes the same bytes as the Python reference
   (tools/xl2hb_fine.py), and they decode back to the line.
 """
@@ -24,6 +26,7 @@ holds for any data:
 from __future__ import annotations
 
 import argparse
+import fcntl
 import os
 import random
 import signal
@@ -31,6 +34,9 @@ import struct
 import subprocess
 import sys
 import tempfile
+import termios
+import threading
+import time
 
 sys.path.insert(0, os.path.dirname(__file__))
 import fineimage  # noqa: E402
@@ -384,6 +390,123 @@ def check_secure_print(data: str, td: str) -> None:
     print("OK   Enhance Black Printing reaches colour jobs only, before RESOLUTION")
 
 
+def unread(fd: int) -> int:
+    """Bytes waiting in a pipe."""
+    return struct.unpack("i", fcntl.ioctl(fd, termios.FIONREAD, b"\0" * 4))[0]
+
+
+def cancel_at(data: str, options: str, before: bytes, after: bytes):
+    """(exit status, output, messages) of a job that gets SIGTERM once the filter has read `before`.
+
+    `after` is what the rasterizer still delivers before the pipe closes."""
+    env = {"HL3070CW_DATA": data, "SOURCE_DATE_EPOCH": EPOCH, "PATH": "/usr/bin:/bin"}
+    rd, wr = os.pipe()
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        p = subprocess.Popen([FILTER, "1", "u", "t", "1", options], stdin=rd, stdout=out, stderr=err, env=env)
+        with os.fdopen(wr, "wb", buffering=0) as pipe:
+            pipe.write(before)
+            deadline = time.monotonic() + 30
+            while unread(rd) and p.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.01)  # all of it read: the signal handler is in place
+            p.send_signal(signal.SIGTERM)
+            pipe.write(after)  # rd is still open here, so this cannot fail if the filter is gone
+        os.close(rd)
+        p.wait(timeout=60)
+        out.seek(0)
+        err.seek(0)
+        return p.returncode, out.read(), err.read().decode(errors="replace")
+
+
+def check_cancel_before_page(data: str) -> None:
+    """Cancelled before a page's first line: that page is not started, so no blank sheet comes out."""
+    hdr = b"3SaR" + rw.header("A6")
+    width, height = struct.unpack_from("<II", hdr, 4 + 372)
+    row = b"\xff" * (width * 3)
+    first = hdr + row * height
+    cases = {  # read before the cancel, arriving after it, pages to print
+        "before the header": (hdr[:1], b"", 0),
+        "before the header, which still arrives": (hdr[:1], hdr[1:] + row, 0),
+        "inside the header": (hdr[:900], b"", 0),
+        "inside the header, the rest still arrives": (hdr[:900], hdr[900:] + row, 0),
+        "inside the header, which is damaged": (hdr[:100], b"\xee" * (len(hdr) - 100), 0),
+        "before the first line": (hdr, b"", 0),
+        "before the first line, which still arrives": (hdr, row, 0),
+        "before the second header": (first, b"", 1),
+        "before the second page's first line": (first + hdr[4:], b"", 1),
+        "before the second page's first line, which still arrives": (first + hdr[4:], row, 1),
+    }
+    for opts in ("BRMonoColor=Mono", "BRMonoColor=FullColor " + FINE):
+        for name, (before, after, pages) in cases.items():
+            rc, out, err = cancel_at(data, opts, before, after)
+            what = f"cancel {name} [{opts}]"
+            check(rc == 0 and "ERROR:" not in err and "Sanitizer" not in err, f"{what}: status {rc}: {err.strip()[:200]}")
+            check(err.count("PAGE:") == pages, f"{what}: {err.count('PAGE:')} pages counted, want {pages}")
+            if not pages:
+                check(not out, f"{what}: {len(out)} bytes went to the printer")
+                continue
+            check(out.endswith(UEL), f"{what}: job not closed")
+            try:
+                begun = [op.name for op in pxl.parse(out).ops].count("BeginPage")
+                check(begun == pages, f"{what}: {begun} pages sent, want {pages}")
+            except (ValueError, LookupError, struct.error) as e:
+                check(False, f"{what}: output does not parse: {e}")
+    print(f"OK   {len(cases)} ways to cancel before a page starts print nothing of it")
+
+
+def check_cancel_blocked(data: str) -> None:
+    """Cancelled while the printer is slower than the filter, which then waits in write()."""
+    hdr = b"3SaR" + rw.header("A6")
+    width, _ = rw.page_geometry("A6")
+    rng = random.Random(15)
+    raster = hdr + bytes(rng.randrange(256) for _ in range(width * 3)) * 1500
+    env = {"HL3070CW_DATA": data, "SOURCE_DATE_EPOCH": EPOCH, "PATH": "/usr/bin:/bin"}
+    for opts in ("BRMonoColor=Mono", "BRMonoColor=FullColor " + FINE):
+        for gone in (False, True):
+            what = f"cancel with {'the backend gone' if gone else 'the output blocked'} [{opts}]"
+            with tempfile.TemporaryFile() as err:
+                p = subprocess.Popen([FILTER, "1", "u", "t", "1", opts], stdin=subprocess.PIPE,
+                                     stdout=subprocess.PIPE, stderr=err, env=env)
+
+                def feed(proc=p):
+                    try:
+                        with proc.stdin:
+                            proc.stdin.write(raster)
+                    except BrokenPipeError:  # the filter stopped reading: that is the cancel
+                        pass
+
+                feeder = threading.Thread(target=feed)
+                feeder.start()
+                last, since, deadline = 0, time.monotonic(), time.monotonic() + 30
+                while time.monotonic() < deadline:  # until the pipe is full and stays that way
+                    n, now = unread(p.stdout.fileno()), time.monotonic()
+                    if n != last:
+                        last, since = n, now
+                    elif n and now - since > 1:
+                        break
+                    time.sleep(0.05)
+                p.send_signal(signal.SIGTERM)
+                time.sleep(0.2)
+                out = b""
+                if not gone:
+                    out = p.stdout.read()
+                p.stdout.close()
+                p.wait(timeout=60)
+                feeder.join()
+                err.seek(0)
+                text = err.read().decode(errors="replace")
+            check(last > 0, f"{what}: the output never filled the pipe")
+            check(p.returncode == 0 and "ERROR:" not in text and "Sanitizer" not in text,
+                  f"{what}: status {p.returncode}: {text.strip()[:200]}")
+            if gone:
+                continue
+            try:
+                pxl.parse(out)
+                check(out.endswith(UEL) and len(planes(out, FINE in opts)) > 0, f"{what}: job not closed")
+            except (ValueError, LookupError, struct.error, xl2hb.FormatError, xl2hb_fine.DecodeError) as e:
+                check(False, f"{what}: output is cut or does not decode: {e}")
+    print("OK   a cancel while the output is blocked cuts nothing off")
+
+
 def check_cancel(data: str) -> None:
     """Cancelling: cupsd sends SIGTERM and the raster stops; the job must be closed properly."""
     hdr = b"3SaR" + rw.header("A6")
@@ -399,7 +522,7 @@ def check_cancel(data: str) -> None:
     p.send_signal(signal.SIGTERM)
     out, err = p.communicate(timeout=60)
     text = err.decode(errors="replace")
-    check(p.returncode in (0, 1) and "Sanitizer" not in text, f"cancel: status {p.returncode}: {text[:300]}")
+    check(p.returncode == 0 and "Sanitizer" not in text, f"cancel: status {p.returncode}: {text[:300]}")
     check(out.endswith(UEL) and b"@PJL EOJ" in out[-200:], "cancel: job not closed")
     check("ERROR:" not in text, f"cancel: reported as an error: {text.strip()[:200]}")
     try:
@@ -481,6 +604,8 @@ def main() -> int:
         check_job_text(data, td)
         check_secure_print(data, td)
         check_cancel(data)
+        check_cancel_before_page(data)
+        check_cancel_blocked(data)
         check_fine_encoder(td, a.lines)
     if failures:
         print(f"\n{len(failures)} checks failed")

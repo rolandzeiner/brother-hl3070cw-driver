@@ -376,6 +376,9 @@ int main(int argc, char *argv[]) {
   struct sigaction sa;
   memset(&sa, 0, sizeof sa);
   sa.sa_handler = on_term;
+  /* On a cancel the backend goes on sending what it gets, so what has been
+   * started must be written whole: an interrupted write would lose part of it. */
+  sa.sa_flags = SA_RESTART;
   sigaction(SIGTERM, &sa, NULL);
   signal(SIGPIPE, SIG_IGN);
 
@@ -410,6 +413,8 @@ int main(int argc, char *argv[]) {
   job_options o;
 
   while (!status && !g_cancelled && cupsRasterReadHeader2(ras, &h)) {
+    if (g_cancelled) /* while waiting for the header */
+      break;
     page++;
 
     /* The page header is untrusted input: check format and geometry before
@@ -476,11 +481,6 @@ int main(int argc, char *argv[]) {
           break;
         }
       }
-      if (xl_job_begin(&w, stdout, &job)) {
-        status = 1;
-        break;
-      }
-      started = 1;
     }
 
     xl_page pg;
@@ -515,11 +515,7 @@ int main(int argc, char *argv[]) {
       status = 1;
       break;
     }
-    fprintf(stderr, "INFO: Printing page %d\n", page);
-    if (xl_page_begin(&w, &pg)) {
-      status = 1;
-      break;
-    }
+    int page_begun = 0;
     for (unsigned y = 0; y < h.cupsHeight; y++) {
       if (g_cancelled)
         break;
@@ -529,6 +525,26 @@ int main(int argc, char *argv[]) {
           status = 1;
         }
         break;
+      }
+      if (!page_begun) {
+        /* Only now, with the first line here: the printer ejects every page
+         * that is started, and the rasterizer can take seconds to get this
+         * far. A job cancelled in that time must not give a blank sheet. */
+        if (g_cancelled)
+          break;
+        if (!started) {
+          if (xl_job_begin(&w, stdout, &job)) {
+            status = 1;
+            break;
+          }
+          started = 1;
+        }
+        fprintf(stderr, "INFO: Printing page %d\n", page);
+        if (xl_page_begin(&w, &pg)) {
+          status = 1;
+          break;
+        }
+        page_begun = 1;
       }
       if (y >= height)
         continue;
@@ -559,9 +575,11 @@ int main(int argc, char *argv[]) {
         break;
       }
     }
-    if (xl_page_end(&w))
-      status = 1;
-    fprintf(stderr, "PAGE: %d 1\n", page);
+    if (page_begun) {
+      if (xl_page_end(&w))
+        status = 1;
+      fprintf(stderr, "PAGE: %d 1\n", page);
+    }
     if (status)
       break;
   }
@@ -570,7 +588,7 @@ int main(int argc, char *argv[]) {
     if (xl_job_end(&w))
       status = 1;
     xl_writer_free(&w);
-  } else if (!status) {
+  } else if (!status && !g_cancelled) {
     fputs("ERROR: no pages in the job\n", stderr);
     status = 1;
   }
@@ -585,5 +603,6 @@ int main(int argc, char *argv[]) {
   cupsFreeOptions(num_opts, opts);
   if (fd)
     close(fd);
-  return status;
+  /* a cancel is not a failure, also when the backend was gone before the job's end */
+  return g_cancelled ? 0 : status;
 }
