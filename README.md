@@ -19,6 +19,11 @@ Black-and-white pages come out exactly as with Brother's driver, also in Fine qu
 pages practically the same. It also runs on Linux, for example on a Raspberry Pi
 ([Linux and Raspberry Pi](#linux-and-raspberry-pi)).
 
+The native driver also lists nine printers with the same Brother engine: HL-3040CN, HL-3045CN,
+HL-3075CW, DCP-9010CN, MFC-9010CN, MFC-9120CN, MFC-9125CN, MFC-9320CW and MFC-9325CW. They are
+marked *untested*: Brother's driver writes the same data for them as for the HL-3070CW, but this
+driver has never printed on one. Faxing is not supported.
+
 This project is not made or endorsed by Brother.
 
 ## Contents
@@ -68,8 +73,18 @@ package is `Brother_PrinterDrivers_ColorLaser`, version 5.0.0. Whether that down
 same files, and whether it installs on macOS 27, has not been checked. Only the data files are used;
 Brother's Intel program is never run.
 
-If you cannot install Brother's driver, use the PostScript version of this driver. It works
-without Brother's files.
+You can also take the data out of Brother's package without installing it. Install this driver
+(steps 2 to 4), then give the package to this helper, without `sudo`: either Brother's Mac `.pkg`,
+or its Linux driver `hl3070cwlpr-1.1.2-1.i386.rpm` from the
+[Linux section](#linux-and-raspberry-pi). The Linux package has no colour profiles, so colours, and
+possibly greys, then look slightly different from Brother's Mac driver.
+
+```sh
+/Library/Printers/HL3070CW-Native/add-brother-data.sh ~/Downloads/hl3070cwlpr-1.1.2-1.i386.rpm
+```
+
+If you cannot get Brother's files, use the PostScript version of this driver. It works without
+them.
 
 ### 2. Download the installer
 
@@ -158,8 +173,11 @@ native driver; [What works](#what-works) shows which of them the PostScript driv
 - **Improve Gray Color**, **Enhance Black Printing**, **Toner Save Mode** and **Improve Print
   Output** (less paper curl or better toner fixing) work as in Brother's driver. Enhance Black
   Printing applies to colour jobs only.
+- **Custom paper sizes** from 70 x 116 mm to 215.9 x 406.4 mm work with the native driver.
 - **Paper size**, **paper source** (tray or manual feed) and **media type** (plain, thin, thick,
   envelopes, labels and more) are in the usual places.
+
+The options of the driver are in English and German.
 
 To make black and white the default, open the print dialog, set **Color / Mono** to **Mono** and
 save the settings as a preset.
@@ -313,7 +331,7 @@ server in Docker, for example on a Raspberry Pi: see [docker/README.md](docker/R
 | Black and white | Identical to Brother's driver, byte for byte | The printer's own rendering |
 | Colour | Brother's colour tables and halftones; about 99.96 % of all dots identical to Brother's driver | The printer's own rendering |
 | Fine quality (2400 dpi class) | The same dots as Brother's driver (in colour: as above); the compressed data matches Brother's for about 95 % of lines | Not available |
-| Paper sizes | All 22 of Brother's driver | All 22 |
+| Paper sizes | All 22 of Brother's driver, and custom sizes | All 22 |
 | Tray and manual feed | Yes | Yes |
 | Media types | All 11 | All 11 |
 | Color / Mono / Auto, Color Mode, Improve Gray, Enhance Black, Improve Print Output | Yes | Color / Mono only |
@@ -398,7 +416,7 @@ Repository layout:
 - `tests/linux-package.sh`: installs a Linux release package in a throwaway container, prints
   through CUPS and uninstalls it again. GitHub runs it for both processors.
 - `tests/macos-package.sh`: the same for the Mac installer, on GitHub's build machines only.
-- `packaging/`: the installer package (`make pkg`).
+- `packaging/`: the installer package (`make pkg`) and `add-brother-data.sh`.
 - `tools/`: the Python tools used to work out and check the format: raster writer, PCL XL parser,
   band decoder, measurement scripts and the comparisons with Brother's driver.
 - `tests/fixtures.sha256`: checksums of Brother's output for `make test` (for Fine jobs, of the

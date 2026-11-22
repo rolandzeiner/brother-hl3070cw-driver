@@ -37,7 +37,6 @@
 #include <cups/raster.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <math.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -85,6 +84,12 @@
 /* inside a folder only root can enter: see install-linux.sh */
 #define DRIVER_PACKAGE_DIR DRIVER_DIR "/unpack/package"
 #define BROTHER_FILTER_PATH BROTHER_DIR "/" BROTHER_FILTER
+#ifdef __APPLE__
+/* Brother's Linux LPR package, unpacked on a Mac: the same tiles and tables, no profiles */
+#define LPR_DIR "opt/brother/Printers/hl3070cw"
+#define LPR_LUT "inf/lut"
+#define LPR_FILTER "lpd/brhl3070cwfilter"
+#endif
 
 /* The largest page the printer takes, in pixels at 600 dpi with no margins
  * taken off: 624 pt wide (DL Long Edge, the widest size) and 1152 pt long
@@ -376,11 +381,7 @@ static int data_complete(void) {
       if (fine)
         return 0;
     }
-#ifdef BROTHER_PROFILES
-  for (size_t i = 0; i < NORMAL_PROFILES; i++)
-    if (path_join(path, sizeof path, data_dir(), "/profiles/", profiles[i]) || access(path, R_OK) != 0)
-      return 0;
-#endif
+  /* no word on profiles: data from Brother's Linux package has none */
   color_table *t = malloc(sizeof *t);
   int ok = t != NULL;
   for (int m = 0; ok && m < 3; m++)
@@ -395,19 +396,36 @@ static int data_complete(void) {
  * the package the installer unpacked. A package's content is not trusted:
  * below the package folder no symlink is followed, not even one that points
  * back inside it. */
-static int open_brother_dir(int unpacked) {
+static int open_brother_dir(int unpacked, int *lpr) {
+  *lpr = 0;
   if (!unpacked)
     return fs_open_dir(BROTHER_DIR);
   int package = fs_open_dir(package_dir());
   if (package < 0)
     return -1;
-  int fd = fs_open_dir_beneath(package, &BROTHER_DIR[1]); /* without the leading slash */
+  const char *dir = &BROTHER_DIR[1]; /* without the leading slash */
+#ifdef __APPLE__
+  struct stat st; /* only chooses the layout; the folders are still opened without following symlinks */
+  if (fstatat(package, LPR_DIR, &st, 0) == 0) {
+    dir = LPR_DIR;
+    *lpr = 1;
+  }
+#endif
+  int fd = fs_open_dir_beneath(package, dir);
   close(package);
   return fd;
 }
 
-/* Copy what the driver needs from the folder from into the folder to. */
-static int copy_brother_files(int from, int to) {
+/* Copy what the driver needs from the folder from into the folder to; lpr:
+ * from is the folder of Brother's Linux package. */
+static int copy_brother_files(int from, int to, int lpr) {
+  const char *lut = BROTHER_LUT, *filter = BROTHER_FILTER;
+#ifdef __APPLE__
+  if (lpr) {
+    lut = LPR_LUT;
+    filter = LPR_FILTER;
+  }
+#endif
   /* The 600 dpi files are needed; without the Fine ones the driver still
    * works and prints Fine jobs in Normal quality. */
   int failed = 0, fine_missing = 0;
@@ -418,20 +436,20 @@ static int copy_brother_files(int from, int to) {
       for (int ts = 0; ts < 2; ts++) {
         char name[64];
         snprintf(name, sizeof name, "%s-%c%s_cache08.bin", fine ? "capt" : "0600", planes[p], ts ? "-TS" : "");
-        if (path_join(path, sizeof path, BROTHER_LUT, "/", name) || fs_copy_file(from, path, to, name, "BRCD", 0)) {
+        if (path_join(path, sizeof path, lut, "/", name) || fs_copy_file(from, path, to, name, "BRCD", 0)) {
           if (fine)
             fine_missing = 1;
           else
             failed = 1;
         }
       }
-  if (color_tables_extract(from, BROTHER_FILTER, to))
+  if (color_tables_extract(from, filter, to))
     failed = 1;
 #ifdef BROTHER_PROFILES
-  int sub = fs_make_dir(to, "profiles");
-  if (sub < 0)
+  int sub = lpr ? -1 : fs_make_dir(to, "profiles");
+  if (!lpr && sub < 0)
     return 1;
-  for (size_t i = 0; i < sizeof profiles / sizeof profiles[0]; i++)
+  for (size_t i = 0; !lpr && i < sizeof profiles / sizeof profiles[0]; i++)
     if (path_join(path, sizeof path, BROTHER_PROFILES, "/", profiles[i]) ||
         fs_copy_file(from, path, sub, profiles[i], "acsp", 36)) { /* the ICC profile signature */
       if (i >= NORMAL_PROFILES)
@@ -439,7 +457,10 @@ static int copy_brother_files(int from, int to) {
       else
         failed = 1;
     }
-  close(sub);
+  if (sub >= 0)
+    close(sub);
+#else
+  (void)lpr;
 #endif
   if (!failed && fine_missing)
     fputs("Some files for Fine quality were not found; Fine will print in Normal quality\n", stderr);
@@ -449,7 +470,8 @@ static int copy_brother_files(int from, int to) {
 /* Runs as root from the installers: see src/fsutil.h for the safeguards. */
 static int extract_brother_data(int unpacked) {
   umask(022); /* the files must stay readable for CUPS (lp) */
-  int from = open_brother_dir(unpacked);
+  int lpr;
+  int from = open_brother_dir(unpacked, &lpr);
   if (from < 0)
     return 1;
   int to = fs_make_dir(AT_FDCWD, data_dir());
@@ -457,7 +479,7 @@ static int extract_brother_data(int unpacked) {
     close(from);
     return 1;
   }
-  int failed = copy_brother_files(from, to);
+  int failed = copy_brother_files(from, to, lpr);
   close(from);
   close(to);
   if (!failed)

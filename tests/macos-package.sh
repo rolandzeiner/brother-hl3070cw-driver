@@ -88,6 +88,20 @@ PY
     [[ ! -e "/$MODELS/Brother HL-3070CW native.ppd" ]] || fail "native PPD installed without complete data"
     printf 'OK   a failed copy keeps complete older data, and only that\n'
 
+    # no driver of Brother's at all: the data out of its Linux package
+    sudo rm -rf "${BROTHER:?}"
+    mkdir -p "$WORK/rpm/opt/brother/Printers/hl3070cw/inf/lut" "$WORK/rpm/opt/brother/Printers/hl3070cw/lpd"
+    cp "$WORK/Brother/Brother LUT/"* "$WORK/rpm/opt/brother/Printers/hl3070cw/inf/lut/"
+    cp "$WORK/Brother/Filter/rastertobrother3040.bundle/Contents/MacOS/rastertobrother3040" \
+        "$WORK/rpm/opt/brother/Printers/hl3070cw/lpd/brhl3070cwfilter"
+    tar -C "$WORK/rpm" -cf "$WORK/fake.rpm" . # bsdtar goes by the content, not the name
+    sudo rm -rf "$DRIVER_DIR/data"
+    "$DRIVER_DIR/add-brother-data.sh" "$WORK/fake.rpm"
+    ! grep -q '^\*cupsICC' "/$MODELS/Brother HL-3070CW native.ppd" || fail "PPD names profiles that are not there"
+    sudo lpadmin -p hl_sibling -E -v socket://127.0.0.1:9101/?waiteof=false -m "$MODELS/Brother HL-3040CN native.ppd"
+    print_job hl_sibling 'XL2HB' -o BRMonoColor=Mono -o PageSize=Custom.100x250mm
+    printf 'OK   data from a package, a sibling printer\n'
+
     sudo "$DRIVER_DIR/uninstall.sh"
     [[ ! -e $DRIVER_DIR ]] || fail "uninstall left $DRIVER_DIR"
     printf 'OK   installed, printed, updated and uninstalled\n'

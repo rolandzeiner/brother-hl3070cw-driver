@@ -76,7 +76,7 @@ check: build/check/rastertohl3070cw build/check/fine_lines
 # tools; without it, the analyzer built into Apple's clang runs alone.
 TIDY     ?= $(firstword $(shell command -v clang-tidy) $(wildcard /opt/homebrew/opt/llvm/bin/clang-tidy) \
             $(wildcard /usr/local/opt/llvm/bin/clang-tidy))
-SCRIPTS  := install.sh install-linux.sh uninstall.sh packaging/postinstall docker/entrypoint.sh \
+SCRIPTS  := install.sh install-linux.sh uninstall.sh packaging/postinstall packaging/add-brother-data.sh docker/entrypoint.sh \
             docker/web/patch-templates.sh tests/linux-package.sh tests/macos-package.sh
 
 lint:
@@ -114,7 +114,7 @@ PKG      := build/pkg/HL3070CW-Driver-$(VERSION).pkg
 
 pkg: $(PKG)
 
-$(PKG): $(BIN) LICENSE Makefile ppd/hl3070cw-native.ppd ppd/hl3070cw-postscript.ppd uninstall.sh packaging/postinstall packaging/distribution.xml
+$(PKG): $(BIN) LICENSE Makefile ppd/hl3070cw-native.ppd ppd/hl3070cw-postscript.ppd $(wildcard ppd/siblings/*.ppd) packaging/add-brother-data.sh uninstall.sh packaging/postinstall packaging/distribution.xml
 	chmod -R u+w build/pkgroot 2>/dev/null || true
 	rm -rf build/pkgroot build/pkgscripts build/pkg
 	mkdir -p build/pkgroot/Library/Printers/HL3070CW-Native build/pkgroot/Library/Printers/PPDs/Contents/Resources build/pkgscripts build/pkg
@@ -122,6 +122,14 @@ $(PKG): $(BIN) LICENSE Makefile ppd/hl3070cw-native.ppd ppd/hl3070cw-postscript.
 	install -m 755 uninstall.sh build/pkgroot/Library/Printers/HL3070CW-Native/uninstall.sh
 	install -m 644 ppd/hl3070cw-native.ppd "build/pkgroot/Library/Printers/PPDs/Contents/Resources/Brother HL-3070CW native.ppd"
 	install -m 644 ppd/hl3070cw-postscript.ppd "build/pkgroot/Library/Printers/PPDs/Contents/Resources/Brother HL-3070CW PostScript.ppd"
+	install -m 755 packaging/add-brother-data.sh build/pkgroot/Library/Printers/HL3070CW-Native/add-brother-data.sh
+	mkdir -p build/pkgroot/Library/Printers/HL3070CW-Native/ppd
+	set -e; for f in ppd/hl3070cw-native.ppd ppd/siblings/*.ppd; do \
+	  model=$$(sed -n 's/^\*ModelName: "\(.*\)"$$/\1/p' "$$f"); \
+	  install -m 644 "$$f" "build/pkgroot/Library/Printers/HL3070CW-Native/ppd/$$model.ppd"; \
+	  install -m 644 "$$f" "build/pkgroot/Library/Printers/PPDs/Contents/Resources/$$model.ppd"; \
+	done
+	chmod 755 build/pkgroot/Library/Printers/HL3070CW-Native/ppd
 	install -m 755 packaging/postinstall build/pkgscripts/postinstall
 	# folder modes as macOS has them, so the package changes none of them
 	chmod 755 build/pkgroot/Library build/pkgroot/Library/Printers/PPDs build/pkgroot/Library/Printers/PPDs/Contents \
@@ -150,6 +158,8 @@ else
 	install -m 644 LICENSE README.md SECURITY.md build/dist/$(DIST_NAME)/
 	install -m 644 ppd/hl3070cw-postscript.ppd build/dist/$(DIST_NAME)/ppd/
 	install -m 644 ppd/linux/hl3070cw-native.ppd build/dist/$(DIST_NAME)/ppd/linux/
+	mkdir -p build/dist/$(DIST_NAME)/ppd/linux/siblings
+	install -m 644 ppd/linux/siblings/*.ppd build/dist/$(DIST_NAME)/ppd/linux/siblings/
 	tar -C build/dist --sort=name --owner=0 --group=0 --numeric-owner --mode=go-w \
 	  -czf build/dist/$(DIST_NAME).tar.gz $(DIST_NAME)
 	rm -rf build/dist/$(DIST_NAME)

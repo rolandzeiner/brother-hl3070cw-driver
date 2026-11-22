@@ -675,7 +675,6 @@ def check_extract(data: str, td: str) -> None:
 
     check(complete(), "check-data: a fresh copy is not taken as complete")
     needed = [n for n in os.listdir(dest) if n.startswith(("0600-", "table-600-"))]
-    needed += ["profiles/broch08_PL_NM.icm", "profiles/broch08_PL_NM_IG_ON.icm"]
     for name in needed:
         path = os.path.join(dest, name)
         with open(path, "rb") as f:
@@ -683,15 +682,28 @@ def check_extract(data: str, td: str) -> None:
         os.remove(path)
         check(not complete(), f"check-data: complete without {name}")
         with open(path, "wb") as f:
-            f.write(good if name.startswith("profiles/") else good[:-1])
-        if not name.startswith("profiles/"):
-            check(not complete(), f"check-data: complete with {name} cut short")
+            f.write(good[:-1])
+        check(not complete(), f"check-data: complete with {name} cut short")
         with open(path, "wb") as f:
             f.write(good)
     check(complete(), "check-data: the restored copy is not taken as complete")
-    for name in ("capt-k_cache08.bin", "table-capt-grayon-normal.bin", "profiles/broch08_PL_Fi.icm"):
+    for name in ("capt-k_cache08.bin", "table-capt-grayon-normal.bin", "profiles/broch08_PL_Fi.icm",
+                 "profiles/broch08_PL_NM.icm"):  # no Fine, and no profiles (Brother's Linux package)
         os.remove(os.path.join(dest, name))
-    check(complete(), "check-data: an installation without Fine is not taken as complete")
+    check(complete(), "check-data: an installation without Fine and profiles is not taken as complete")
+    if sys.platform == "darwin":
+        def linux_package(case, root, top, dest):
+            lpr = os.path.join(root, "opt/brother/Printers/hl3070cw")
+            os.makedirs(os.path.dirname(lpr))
+            os.rename(top, lpr)
+            os.rename(os.path.join(lpr, "lpd/filter"), os.path.join(lpr, "lpd/brhl3070cwfilter"))
+            for at, _, _ in os.walk(root):
+                os.chmod(at, 0o755)
+
+        rc, err, case, _, lpr_dest = extract(linux_package)
+        check(rc == 0 and len([n for n in os.listdir(lpr_dest) if n != "profiles"]) == 28,
+              f"extract: Brother's Linux package on a Mac: {err[:200]}")
+        check(not os.path.exists(os.path.join(lpr_dest, "profiles")), "extract: profiles from the Linux package")
 
     def fifo(case, root, top, dest):
         os.remove(os.path.join(top, "lpd/filter"))

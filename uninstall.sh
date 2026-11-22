@@ -13,6 +13,11 @@ if ((EUID != 0)); then
     exit 2
 fi
 /bin/rm -f -- "$PPD_DIR/Brother HL-3070CW native.ppd" "$PPD_DIR/Brother HL-3070CW PostScript.ppd"
+for src in "$DRIVER_DIR/ppd/Brother "*" native.ppd"; do # the sibling printers'
+    if [[ -f $src ]]; then
+        /bin/rm -f -- "$PPD_DIR/${src##*/}"
+    fi
+done
 case "${DRIVER_DIR:?}" in
 /Library/Printers/?*) /bin/rm -rf -- "${DRIVER_DIR:?}" ;;
 *) exit 2 ;;

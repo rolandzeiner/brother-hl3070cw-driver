@@ -10,7 +10,6 @@ set -uo pipefail
 
 readonly DRIVER_DIR=/Library/Printers/HL3070CW-Native
 readonly PPD_DIR=/Library/Printers/PPDs/Contents/Resources
-readonly NATIVE_PPD="$PPD_DIR/Brother HL-3070CW native.ppd"
 readonly PS_PPD="$PPD_DIR/Brother HL-3070CW PostScript.ppd"
 readonly BROTHER_FILTER=/Library/Printers/Brother/Filter/rastertobrother3040.bundle/Contents/MacOS/rastertobrother3040
 readonly BROTHER_LUT="/Library/Printers/Brother/Brother LUT"
@@ -19,7 +18,11 @@ readonly QUEUE_PPDS=/etc/cups/ppd
 main() {
     umask 022
     if ! copy_brother_data; then
-        /bin/rm -f -- "$NATIVE_PPD"
+        echo "Printer list: the native drivers are left out until there is data (add-brother-data.sh)" >&2
+    fi
+    # the native PPDs that fit the data
+    if ! "$DRIVER_DIR/add-brother-data.sh" --ppds-only; then
+        echo "Could not set up the native PPDs" >&2
     fi
     refresh_queues
 }
@@ -49,15 +52,19 @@ copy_brother_data() {
 # named as a model, not handed over as a file: only then does CUPS carry the
 # printer's saved defaults (Color / Mono, paper size ...) over.
 refresh_queues() {
-    local ppd nick model queue out
+    local ppd nick model queue out src
     for ppd in "$QUEUE_PPDS"/*.ppd; do
         [[ -f $ppd ]] || continue # no printers: the pattern stays as it is
         nick=$(/usr/bin/sed -n 's/^\*NickName: "\(.*\)"$/\1/p' "$ppd") || continue
-        case "$nick" in
-        "Brother HL-3070CW, native driver (open source)") model=$NATIVE_PPD ;;
-        "Brother HL-3070CW, PostScript (BR-Script 3)") model=$PS_PPD ;;
-        *) continue ;;
-        esac
+        model=''
+        for src in "$DRIVER_DIR/ppd"/*.ppd "$PS_PPD"; do
+            [[ -f $src ]] || continue
+            if /usr/bin/grep -qxF "*NickName: \"$nick\"" "$src"; then
+                model=$PPD_DIR/${src##*/}
+                break
+            fi
+        done
+        [[ -n $model ]] || continue
         [[ -f $model ]] || continue # the native PPD was removed above
         queue=${ppd##*/}
         queue=${queue%.ppd}

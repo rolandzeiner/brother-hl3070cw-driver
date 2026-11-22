@@ -69,6 +69,9 @@ main() {
     printf 'OK   PostScript driver, update without a package\n'
 
     check_failed_copy "$dir" "${packages[0]}"
+    lpadmin -p sibling -E -v socket://127.0.0.1:9101 -P /usr/share/ppd/hl3070cw/hl3040cn-native.ppd
+    print_job sibling xl2hb -o BRMonoColor=Mono -o PageSize=Custom.100x250mm
+    printf 'OK   a sibling printer, custom paper\n'
 
     "$dir/install-linux.sh" --uninstall
     local left

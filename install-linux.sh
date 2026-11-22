@@ -30,8 +30,6 @@ readonly QUEUE_PPDS=/etc/cups/ppd
 readonly BROTHER_INSTALLED=/opt/brother/Printers/hl3070cw
 # hl3070cwlpr-1.1.2-1.i386.rpm, the package this driver is tested with
 readonly BROTHER_RPM_SHA256=147208bf44976d488f73ad144187182301983de2821b0efe9a1370d3552dfb22
-readonly NATIVE_NICK="Brother HL-3070CW, native driver (open source)"
-readonly PS_NICK="Brother HL-3070CW, PostScript (BR-Script 3)"
 
 UNPACKING=0 # set in copy_brother_data: on_exit removes UNPACK_DIR
 
@@ -68,8 +66,9 @@ main() {
     local native_ppd="$src_dir/ppd/linux/hl3070cw-native.ppd" ps_ppd="$src_dir/ppd/hl3070cw-postscript.ppd"
     [[ -f $native_ppd && -f $ps_ppd ]] || die "PPD files missing in $src_dir/ppd"
     # What gets installed as root, and run as root, must not be changeable by others.
-    local f
-    for f in "$bin" "$(dirname -- "$bin")" "$native_ppd" "$ps_ppd" "$src_dir/ppd" "$src_dir/ppd/linux"; do
+    local f natives=("$native_ppd" "$src_dir/ppd/linux/siblings"/*.ppd)
+    for f in "$bin" "$(dirname -- "$bin")" "${natives[@]}" "$ps_ppd" "$src_dir/ppd" "$src_dir/ppd/linux" \
+        "$src_dir/ppd/linux/siblings"; do
         check_source "$f"
     done
     local version
@@ -90,11 +89,13 @@ main() {
 
     log "Installing the PPD files into $PPD_DIR"
     run install -m 644 -o root -g root "$ps_ppd" "$PPD_DIR/hl3070cw-postscript.ppd"
-    if ((have_data)); then
-        run install -m 644 -o root -g root "$native_ppd" "$PPD_DIR/hl3070cw-native.ppd"
-    else
-        run rm -f -- "$PPD_DIR/hl3070cw-native.ppd"
-    fi
+    for f in "${natives[@]}"; do
+        if ((have_data)); then
+            run install -m 644 -o root -g root "$f" "$PPD_DIR/${f##*/}"
+        else
+            run rm -f -- "$PPD_DIR/${f##*/}"
+        fi
+    done
 
     refresh_queues
     if [[ -n $QUEUE ]]; then
@@ -201,16 +202,18 @@ ppd_model() {
 # printer that uses one of this driver's PPDs the new one, named as a model so
 # that CUPS keeps the printer's saved defaults.
 refresh_queues() {
-    local ppd nick model queue
+    local ppd nick model queue ours
     for ppd in "$QUEUE_PPDS"/*.ppd; do
         [[ -f $ppd ]] || continue
         nick=$(sed -n 's/^\*NickName: "\(.*\)"$/\1/p' "$ppd") || continue
-        case "$nick" in
-        "$NATIVE_NICK") model=hl3070cw-native.ppd ;;
-        "$PS_NICK") model=hl3070cw-postscript.ppd ;;
-        *) continue ;;
-        esac
-        [[ -f $PPD_DIR/$model ]] || continue
+        model=''
+        for ours in "$PPD_DIR"/*.ppd; do
+            if [[ -f $ours ]] && grep -qxF "*NickName: \"$nick\"" "$ours"; then
+                model=${ours##*/}
+                break
+            fi
+        done
+        [[ -n $model ]] || continue
         queue=${ppd##*/}
         queue=${queue%.ppd}
         log "Printer $queue: new $model"

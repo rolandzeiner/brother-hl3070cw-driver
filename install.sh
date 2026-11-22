@@ -56,8 +56,10 @@ main() {
     local native_ppd="$src_dir/ppd/hl3070cw-native.ppd" ps_ppd="$src_dir/ppd/hl3070cw-postscript.ppd"
     [[ -f $native_ppd && -f $ps_ppd ]] || die "PPD files missing in $src_dir/ppd"
     # What gets installed as root, and run as root, must not be changeable by others.
-    local f
-    for f in "$bin" "$(dirname -- "$bin")" "$native_ppd" "$ps_ppd" "$src_dir/ppd"; do
+    local f helper="$src_dir/packaging/add-brother-data.sh"
+    [[ -f $helper ]] || die "add-brother-data.sh missing in $src_dir/packaging"
+    for f in "$bin" "$(dirname -- "$bin")" "$native_ppd" "$ps_ppd" "$src_dir/ppd" "$helper" "$src_dir/packaging" \
+        "$src_dir/ppd/siblings" "$src_dir/ppd/siblings"/*.ppd; do
         check_source "$f"
     done
     log "Filter: $("$bin" --version 2>/dev/null || printf 'unknown version')"
@@ -65,6 +67,14 @@ main() {
     log "Installing the filter into $DRIVER_DIR"
     run "${SUDO[@]+"${SUDO[@]}"}" "$MKDIR" -m 755 -p -- "$DRIVER_DIR"
     run "${SUDO[@]+"${SUDO[@]}"}" "$INSTALL" -m 755 -o root -g wheel "$bin" "$DRIVER_DIR/rastertohl3070cw"
+
+    run "${SUDO[@]+"${SUDO[@]}"}" "$INSTALL" -m 755 -o root -g wheel "$helper" "$DRIVER_DIR/add-brother-data.sh"
+    run "${SUDO[@]+"${SUDO[@]}"}" "$MKDIR" -m 755 -p -- "$DRIVER_DIR/ppd"
+    local model
+    for f in "$native_ppd" "$src_dir/ppd/siblings"/*.ppd; do
+        model=$(/usr/bin/sed -n 's/^\*ModelName: "\(.*\)"$/\1/p' "$f") || die "cannot read $f"
+        run "${SUDO[@]+"${SUDO[@]}"}" "$INSTALL" -m 644 -o root -g wheel "$f" "$DRIVER_DIR/ppd/$model.ppd"
+    done
 
     local have_brother=0
     if [[ -f $BROTHER_FILTER && -d $BROTHER_LUT ]]; then
@@ -88,9 +98,7 @@ main() {
 
     log "Installing the PPD files into $PPD_DIR"
     run "${SUDO[@]+"${SUDO[@]}"}" "$INSTALL" -m 644 -o root -g wheel "$ps_ppd" "$PPD_DIR/$PS_PPD_NAME"
-    if ((have_brother)); then
-        run "${SUDO[@]+"${SUDO[@]}"}" "$INSTALL" -m 644 -o root -g wheel "$native_ppd" "$PPD_DIR/$NATIVE_PPD_NAME"
-    fi
+    run "$DRIVER_DIR/add-brother-data.sh" --ppds-only || warn "could not set up the native PPDs"
 
     if [[ -n $QUEUE ]]; then
         setup_queue "$have_brother"
@@ -140,7 +148,14 @@ setup_queue() {
 uninstall() {
     log "Removing the driver"
     local f
-    for f in "$PPD_DIR/$NATIVE_PPD_NAME" "$PPD_DIR/$PS_PPD_NAME"; do
+    local ours src
+    ours=("$PPD_DIR/$NATIVE_PPD_NAME" "$PPD_DIR/$PS_PPD_NAME")
+    for src in "$DRIVER_DIR/ppd/Brother "*" native.ppd"; do
+        if [[ -f $src && ${src##*/} != "$NATIVE_PPD_NAME" ]]; then
+            ours+=("$PPD_DIR/${src##*/}")
+        fi
+    done
+    for f in "${ours[@]}"; do
         if [[ -e $f ]]; then
             run "${SUDO[@]+"${SUDO[@]}"}" "$RM" -f -- "$f"
         fi

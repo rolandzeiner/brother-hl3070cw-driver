@@ -37,6 +37,11 @@ The Mac package (`.pkg`):
 Brother's data and, with `--uninstall`, for removing them and the package receipt. It calls
 `lpadmin` as you.
 
+`add-brother-data.sh` runs as you and opens Brother's package as you. With `sudo` it unpacks only
+the result into `/Library/Printers/HL3070CW-Native/unpack`, which only root can enter, runs the
+filter's `--extract-brother-data --unpacked`, removes that folder and installs the native PPDs. The
+package and `install.sh` call it with `--ppds-only` for the last of these.
+
 `uninstall.sh` removes the driver's folder and both PPDs and forgets the package receipt. Printers
 are left as they are.
 
