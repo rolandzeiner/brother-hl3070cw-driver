@@ -58,8 +58,8 @@ black and white. Colour has not been printed on paper yet ([What works](#what-wo
 The other nine have the same engine. In all 65 of the project's test jobs, Brother's own driver
 writes the same data for each of them as for the HL-3070CW. They are marked *untested* in the list
 of drivers too. If you have one, please
-[tell us whether it prints](https://github.com/rolandzeiner/brother-hl3070cw-driver/issues), and
-name the model.
+[tell us whether it prints](https://github.com/rolandzeiner/brother-hl3070cw-driver/issues): the
+form asks for the model.
 
 For those nine:
 

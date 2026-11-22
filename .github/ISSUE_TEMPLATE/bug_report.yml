@@ -10,6 +10,26 @@ body:
         If the printer itself shows an error (a paper jam, "Replace Toner", a cover open), it's a printer problem, not a driver problem. Brother's support pages cover those.
 
   - type: dropdown
+    id: model
+    attributes:
+      label: Which printer do you have?
+      description: Only the HL-3070CW has been tested. For the others a report that it prints helps too.
+      options:
+        - HL-3070CW
+        - HL-3040CN
+        - HL-3045CN
+        - HL-3075CW
+        - DCP-9010CN
+        - MFC-9010CN
+        - MFC-9120CN
+        - MFC-9125CN
+        - MFC-9320CW
+        - MFC-9325CW
+        - Another model
+    validations:
+      required: true
+
+  - type: dropdown
     id: driver
     attributes:
       label: Which driver do you use?

@@ -3,7 +3,12 @@
 Run the HL-3070CW as a network printer for the computers and phones in the house: CUPS with this
 project's driver in a container, for example on a Raspberry Pi. Macs, iPhones and other clients of
 AirPrint or IPP Everywhere print without installing a driver. It has been used from Macs and an
-iPhone. Windows has not been tested. The print server supports only the HL-3070CW.
+iPhone. Windows has not been tested.
+
+The print server supports only the HL-3070CW. The driver itself also supports the
+HL-3040CN, HL-3045CN, HL-3075CW, DCP-9010CN, MFC-9010CN,
+MFC-9120CN, MFC-9125CN, MFC-9320CW and MFC-9325CW, untested. For those, install it on
+the computer instead, as in [the main guide](../README.md#supported-printers).
 
 Secure Print works with the native driver: **Print with PIN** in a Mac's print dialog reaches the
 printer.
