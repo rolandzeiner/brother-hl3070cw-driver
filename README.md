@@ -13,6 +13,7 @@ Raspberry Pi.
 
 Brother's own macOS driver for this printer contains a program for Intel processors. On Apple
 Silicon Macs it only runs through Rosetta 2, which Apple keeps available only through macOS 27.
+Upgrading to macOS 27 also removed Rosetta until 27.2, so Brother's driver may have stopped already.
 This project is an open-source replacement that runs natively on Apple Silicon and Intel Macs.
 Black-and-white pages come out exactly as with Brother's driver, also in Fine quality, and colour
 pages practically the same. It also runs on Linux, for example on a Raspberry Pi
@@ -56,14 +57,18 @@ Mac before, those files are almost certainly there already, and you can go on to
 
 If not, install Brother's driver first:
 
-1. Open Brother's [HL-3070CW download page](https://support.brother.com/g/b/downloadtop.aspx?c=us&lang=en&prod=hl3070cw_all).
-   To see your country's version of the page, change the region at the top.
-2. Choose **macOS** and your macOS version (or the newest one listed), then download and install
-   the **Printer Driver**. This project was tested with Brother's package
-   `Brother_PrinterDrivers_ColorLaser.pkg`, version 5.0.0. Only the data files from it are used;
-   its Intel program is never run.
+1. Open Brother's [list of older systems for the HL-3070CW](https://support.brother.com/g/b/downloadlistdiscon.aspx?c=us&lang=en&prod=hl3070cw_all).
+   The normal download page no longer lists macOS. It links to this list as
+   *Cannot see your OS family? Click here.*
+2. Choose **macOS 10.15.x**, the newest one there, also if your macOS is newer. Download and install
+   the **Printer Driver**, version 1.4.0 of 27 September 2019.
 
-If Brother's page offers nothing for macOS, use the PostScript version of this driver. It works
+This project was tested with the files of an existing installation of Brother's driver, whose
+package is `Brother_PrinterDrivers_ColorLaser`, version 5.0.0. Whether that download contains the
+same files, and whether it installs on macOS 27, has not been checked. Only the data files are used;
+Brother's Intel program is never run.
+
+If you cannot install Brother's driver, use the PostScript version of this driver. It works
 without Brother's files.
 
 ### 2. Download the installer
@@ -174,6 +179,14 @@ files were not found when you installed. Install Brother's driver
 ([step 1](#1-check-for-brothers-driver)) and run this installer again. Until then, use
 **Brother HL-3070CW, PostScript (BR-Script 3)**.
 
+**"The printer software is not compatible with this device."** The printer still uses a driver for
+Intel processors, usually Brother's own: it was added before you installed this driver, or Brother's
+entry was picked in the list. Remove the printer and add it again with **Select Software...**, as in
+[Add the printer](#add-the-printer).
+
+**The print dialog still shows the old options after an update.** Apps remember a printer's options
+while they run. Quit the app (Cmd+Q), open it again and print.
+
 **Print Quality is missing from the print dialog.** The printer was added with an older version of
 this driver. Run the newest installer; it updates the printers that are already set up.
 
@@ -190,6 +203,13 @@ switched on (macOS cancels it after three hours).
 
 **Faint copies of text or images appear further down the page.** That is "ghosting", caused by an
 old toner cartridge or drum unit, not by the driver.
+
+**You want to see what the installer did.** This line in Terminal shows whether Brother's data was
+copied and which printers got the new driver files:
+
+```sh
+grep -E "postinstall: (Brother|Copying|Printer|Could not)" /var/log/install.log
+```
 
 **Something else.** [Open an issue](https://github.com/rolandzeiner/brother-hl3070cw-driver/issues)
 and describe what you printed and what happened. A GitHub account is needed for that.
