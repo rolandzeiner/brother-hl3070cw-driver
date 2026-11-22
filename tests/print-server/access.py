@@ -29,11 +29,29 @@ QUEUE = "/printers/HL3070CW"
 TAGS = {"int": 0x21, "bool": 0x22, "name": 0x42, "keyword": 0x44, "uri": 0x45, "mime": 0x49, "text": 0x41,
         "octets": 0x30}
 PRINT, CREATE, SEND, CANCEL, JOB_ATTRS, HOLD, RELEASE, RESTART, REPROCESS = 2, 5, 6, 8, 9, 12, 13, 14, 0x2C
+GET_JOBS, SUBSCRIBE = 10, 0x16
 PRINTER_ATTRS, PAUSE, RESUME, PURGE, SET_PRINTER, SET_JOB, CANCEL_JOBS = 11, 16, 17, 18, 19, 20, 0x38
 ENABLE, DISABLE, HOLD_NEW, RELEASE_NEW, CLOSE = 0x22, 0x23, 0x25, 0x26, 0x3B
 ADD_MODIFY, DELETE, ADD_CLASS, DELETE_CLASS, ACCEPT, REJECT, SET_DEFAULT = 0x4003, 0x4004, 0x4006, 0x4007, 0x4008, 0x4009, 0x400A
 DEVICES, MOVE, AUTHENTICATE, GET_DOCUMENT, CREATE_LOCAL = 0x400B, 0x400D, 0x400E, 0x4027, 0x4028
 SECRET = b"%!PS-Adobe-3.0\n% CONFIDENTIAL-TEST-DOCUMENT\nshowpage\n"
+UNKNOWN = b"\x00\x01\x02 data in no format the driver knows \xfe\xff"
+BANNER = b"#PDF-BANNER\nTemplate default.pdf\n"
+HELD = [("keyword", "job-hold-until", "indefinite")]
+
+
+def tiny_pdf() -> bytes:
+    """A one-page PDF with a correct cross-reference table."""
+    objects = [b"<</Type/Catalog/Pages 2 0 R>>", b"<</Type/Pages/Kids[3 0 R]/Count 1>>",
+               b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]>>"]
+    out, offsets = b"%PDF-1.4\n", []
+    for number, body in enumerate(objects, 1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n" % number + body + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objects) + 1)
+    out += b"".join(b"%010d 00000 n \n" % offset for offset in offsets)
+    return out + b"trailer\n<</Size %d/Root 1 0 R>>\nstartxref\n%d\n%%%%EOF\n" % (len(objects) + 1, xref)
 
 failures = []
 
@@ -61,7 +79,7 @@ def attribute(kind: str, name: str, value) -> bytes:
 
 
 def ipp(way, op: int, user: str | None = None, job: int | None = None, data: bytes = b"", attrs=(), job_attrs=(),
-        printer_attrs=(), path: str = QUEUE, auth: str | None = None, target: str = QUEUE):
+        printer_attrs=(), path: str = QUEUE, auth: str | None = None, target: str = QUEUE, subscription_attrs=()):
     """(HTTP status, IPP status, attributes, what follows them)"""
     msg = struct.pack(">BBHI", 2, 0, op, 1) + b"\x01"
     msg += b"\x47" + struct.pack(">H", 18) + b"attributes-charset" + struct.pack(">H", 5) + b"utf-8"
@@ -72,7 +90,7 @@ def ipp(way, op: int, user: str | None = None, job: int | None = None, data: byt
     if user is not None:
         msg += attribute("name", "requesting-user-name", user)
     msg += b"".join(attribute(*a) for a in attrs)
-    for group, values in ((b"\x02", job_attrs), (b"\x04", printer_attrs)):
+    for group, values in ((b"\x02", job_attrs), (b"\x04", printer_attrs), (b"\x06", subscription_attrs)):
         if values:
             msg += group + b"".join(attribute(*a) for a in values)
     headers = {"Content-Type": "application/ipp"}
@@ -267,8 +285,41 @@ def no_forms(way, label: str, job: int) -> None:
             check(not paused(), f"{label}: the form {path} {op} paused the printer")
 
 
+def only_pages(way, label: str) -> None:
+    """What reaches the printer is what the driver made of a page: no raw jobs, no banner documents."""
+    for kind in (None, "application/octet-stream", "application/vnd.cups-raw"):
+        attrs = [("mime", "document-format", kind)] if kind else []
+        reply = ipp(way, PRINT, user="alice", data=UNKNOWN, attrs=attrs, job_attrs=HELD)
+        check(not done(reply), f"{label}: a job in no known format was taken (document-format {kind or 'not given'})")
+    for kind in (None, "application/vnd.cups-pdf-banner"):
+        attrs = [("mime", "document-format", kind)] if kind else []
+        reply = ipp(way, PRINT, user="alice", data=BANNER, attrs=attrs, job_attrs=HELD)
+        check(not done(reply), f"{label}: a banner page was taken as a document ({kind or 'format not given'})")
+    for attrs in ([("mime", "document-format", "application/pdf")], []):
+        reply = ipp(way, PRINT, user="alice", data=tiny_pdf(), attrs=attrs, job_attrs=HELD)
+        check(done(reply), f"{label}: a PDF was refused ({'format not given' if not attrs else 'application/pdf'})")
+
+
+def notifications(way, label: str) -> None:
+    """Clients fetch their notifications; the server sends none to an address a client names."""
+    events = ("keyword", "notify-events", "printer-state-changed")
+    for uri in ("rss:/hl3070cw-access-test", "mailto:nobody@example.invalid", "dbus:/"):
+        reply = ipp(way, SUBSCRIBE, user="alice", subscription_attrs=[("uri", "notify-recipient-uri", uri), events])
+        check(not done(reply), f"{label}: the server took a notification to {uri}")
+    reply = ipp(way, SUBSCRIBE, user="alice", subscription_attrs=[("keyword", "notify-pull-method", "ippget"), events])
+    check(done(reply), f"{label}: notifications that clients fetch were refused ({reply[0]}, {reply[1]:#06x})")
+
+
+def job_count() -> int:
+    reply = ipp(CLIENT, GET_JOBS, attrs=[("keyword", "which-jobs", "all"), ("keyword", "requested-attributes", "job-id")])
+    return len(reply[2].get("job-id", []))
+
+
 def clients() -> None:
     wait_for_server(CLIENT)
+    only_pages(CLIENT, "client")
+    notifications(CLIENT, "client")
+    print("OK   clients: only pages through the driver, no banner pages, no notifications sent elsewhere")
     before = state()
     job = new_job()
     failed = failed_job()
@@ -314,6 +365,9 @@ def clients() -> None:
     check(status == 200 and "nobody-here" not in json.dumps(printer().get("requesting-user-name-denied")),
           f"proxy: the Administration page cannot change it back ({status})")
     check(get(PROXY, "/admin")[0] == 200, "proxy: no Administration page")
+    before_test_page = job_count()
+    status, _ = form(PROXY, QUEUE, {"OP": "print-test-page"})
+    check(status == 200 and job_count() == before_test_page + 1, f"proxy: Print Test Page made no job ({status})")
     status, _ = form(PROXY, "/jobs", {"OP": "cancel-job", "JOB_ID": job})
     check(status == 200 and ipp(CLIENT, JOB_ATTRS, job=job)[2].get("job-state") == [7], "proxy: cannot cancel a job")
     job = new_job()

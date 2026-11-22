@@ -293,6 +293,9 @@ def postscript() -> str:
         '*JCLBegin: "<1B>%-12345X@PJL JOB<0A>"',
         '*JCLToPSInterpreter: "@PJL ENTER LANGUAGE=POSTSCRIPT<0A>"',
         '*JCLEnd: "<1B>%-12345X@PJL EOJ<0A><1B>%-12345X"',
+        # CUPS writes the user name into PJL's DISPLAY text without cleaning its quotes, so a
+        # client's user name could add to the PJL command; "none" leaves DISPLAY out
+        '*cupsPJLDisplay: "none"',
         "",
     ]
     lines += pick_one("BRMonoColor", "Color / Mono", 10, "FullColor",

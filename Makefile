@@ -10,7 +10,7 @@
 #   make pkg        macOS: installer package in build/pkg/
 #   make dist       Linux: release package for this processor in build/dist/
 
-VERSION  ?= 0.5.2
+VERSION  ?= 0.5.3
 OS       := $(shell uname -s)
 # -ffp-contract=off: no fused multiply-add, so the grey conversion rounds
 # exactly like Brother's filter (see src/halftone.c).
@@ -77,7 +77,7 @@ check: build/check/rastertohl3070cw build/check/fine_lines
 TIDY     ?= $(firstword $(shell command -v clang-tidy) $(wildcard /opt/homebrew/opt/llvm/bin/clang-tidy) \
             $(wildcard /usr/local/opt/llvm/bin/clang-tidy))
 SCRIPTS  := install.sh install-linux.sh uninstall.sh packaging/postinstall packaging/add-brother-data.sh docker/entrypoint.sh \
-            docker/web/patch-templates.sh tests/linux-package.sh tests/macos-package.sh
+            docker/web/patch-templates.sh docker/lock-down-cups.sh tests/linux-package.sh tests/macos-package.sh
 
 lint:
 	python3 -I tests/add-brother-data.py

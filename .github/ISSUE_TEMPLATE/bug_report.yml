@@ -50,7 +50,7 @@ body:
       description: |
         The version in the installer's file name, or what this prints:
         On a Mac `/Library/Printers/HL3070CW-Native/rastertohl3070cw --version`, on Linux `/usr/lib/cups/filter/rastertohl3070cw --version`, for the print server `docker exec print-server /usr/lib/cups/filter/rastertohl3070cw --version`.
-      placeholder: e.g. 0.5.2
+      placeholder: e.g. 0.5.3
     validations:
       required: true
 

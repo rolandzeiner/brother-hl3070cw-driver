@@ -32,13 +32,16 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends cups cups-client cups-filters ghostscript poppler-utils \
       libarchive-tools \
  && rm -rf /var/lib/apt/lists/* \
- # no search for network printers (needs Avahi, which the container has not got)
- && rm -f /usr/lib/cups/driver/driverless \
+ # no search for network printers (needs Avahi, which the container has not got), and
+ # no driver programs, which cups-driverd runs for a PPD name any client may ask for
+ && rm -f /usr/lib/cups/driver/* \
  # CUPS's configuration as installed: the entrypoint restores it into the
  # writable /etc/cups at every start (the container runs read-only)
  && cp -a /etc/cups /usr/share/hl3070cw-print-server-etc-cups
 COPY --from=build /src/build/rastertohl3070cw /usr/lib/cups/filter/rastertohl3070cw
 COPY ppd/linux/hl3070cw-native.ppd ppd/hl3070cw-postscript.ppd /usr/share/ppd/hl3070cw/
+# no raw printing, banner pages or notifiers: see the script
+RUN --mount=type=bind,source=docker/lock-down-cups.sh,target=/tmp/lock-down-cups.sh sh /tmp/lock-down-cups.sh
 COPY docker/entrypoint.sh /usr/local/bin/print-server
 RUN chmod 755 /usr/lib/cups/filter/rastertohl3070cw /usr/local/bin/print-server \
  && chmod 644 /usr/share/ppd/hl3070cw/*.ppd

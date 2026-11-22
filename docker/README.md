@@ -21,8 +21,12 @@ It is built on Debian testing (forky), which carries the current CUPS 2.4 releas
 fixes. Debian stable stays on CUPS 2.4.10, with more known security problems open. To build on
 stable anyway, add `--build-arg DEBIAN=trixie-slim` to `docker compose build`.
 
-**Versions 0.5.0 and 0.5.1 of the print server, and builds from before them, have security flaws in
-who may do what. Use 0.5.2 or newer.**
+**Versions of the print server up to 0.5.2 have security flaws. Use 0.5.3 or newer.**
+
+- 0.5.0, 0.5.1 and builds from before them got wrong who may do what (fixed in 0.5.2).
+- Up to 0.5.2, the print server passed a job in a format it did not know to the printer unchanged,
+  past the driver. It took a banner page's template from any path the banner named, and it sent job
+  notifications to any address a client gave (fixed in 0.5.3).
 
 ## What you need
 
@@ -41,7 +45,7 @@ who may do what. Use 0.5.2 or newer.**
 services:
   print-server:
     build:
-      context: https://github.com/rolandzeiner/brother-hl3070cw-driver.git#v0.5.2   # a release tag, or a commit
+      context: https://github.com/rolandzeiner/brother-hl3070cw-driver.git#v0.5.3   # a release tag, or a commit
       dockerfile: docker/Dockerfile
       network: host                 # only if a firewall blocks traffic from Docker networks
     image: hl3070cw-print-server:local
@@ -104,8 +108,13 @@ Put only networks you trust into `ALLOW_FROM`:
 
 - CUPS does not check the user name a client gives. A client can hold or release a job under
   somebody else's name.
-- Who may print may also send data straight to the printer, as anyone who can reach its port 9100
-  can.
+- With the native driver, the printer gets only what the driver made of the pages. A job in a
+  format the server does not know, or one sent as raw data, is refused. With the PostScript driver,
+  a client's PostScript goes to the printer as it is, including any printer commands in it.
+- Anyone who can reach the printer's port 9100 directly can send it anything, past the server. To
+  prevent that, put the printer in a network that only the print server can reach.
+- There are no banner pages (cover pages): a job that asks for one is refused. Clients fetch their
+  job notifications from the server, as AirPrint does; the server sends none to other addresses.
 - The server answers to any host name, so a web page opened on an allowed computer may be able to
   print or cancel jobs.
 - Nothing is encrypted between client, server and printer, the Secure Print PIN included. The job's
@@ -125,6 +134,9 @@ connects from. Forms from that address need no CUPS login, so:
 - Name just the proxy's address. A network admits everything in it.
 - Don't use `127.0.0.1` or the machine's own address with `network_mode: host`: every program on the
   machine could then administer.
+
+**Print Test Page** prints CUPS's test page without the box of printer details, which came from a
+banner page.
 
 Administration works in the web interface only. `lpadmin` and other IPP clients get none, also from
 `WEB_FROM`. With `WEB_FROM` set, clients in `ALLOW_FROM` can read the status pages, and the buttons

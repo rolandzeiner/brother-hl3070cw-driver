@@ -35,6 +35,7 @@ This project is not made or endorsed by Brother.
 - [How it works](#how-it-works)
 - [For developers](#for-developers)
 - [Security](#security)
+- [Disclaimer](#disclaimer)
 - [License and trademarks](#license-and-trademarks)
 
 ## Supported printers
@@ -122,7 +123,7 @@ It works without them.
 ### 2. Download the installer
 
 Open the [latest release](https://github.com/rolandzeiner/brother-hl3070cw-driver/releases/latest).
-Under **Assets**, click the file ending in `.pkg` (for example `HL3070CW-Driver-0.5.2.pkg`). It
+Under **Assets**, click the file ending in `.pkg` (for example `HL3070CW-Driver-0.5.3.pkg`). It
 goes to your Downloads folder.
 
 To check that a file was built by GitHub from this repository (releases after 0.5.0, with the
@@ -136,8 +137,8 @@ gh attestation verify ~/Downloads/FILE --repo rolandzeiner/brother-hl3070cw-driv
 
 Double-click the downloaded file. The first time, macOS refuses to open it:
 
-> **"HL3070CW-Driver-0.5.2.pkg" Not Opened**
-> Apple could not verify "HL3070CW-Driver-0.5.2.pkg" is free of malware that may harm your Mac or
+> **"HL3070CW-Driver-0.5.3.pkg" Not Opened**
+> Apple could not verify "HL3070CW-Driver-0.5.3.pkg" is free of malware that may harm your Mac or
 > compromise your privacy.
 
 macOS shows this for every installer that is not signed with a paid Apple developer certificate,
@@ -146,7 +147,7 @@ the release's `SHA256SUMS` file has its checksum. To open it anyway:
 
 1. Click **Done**. Do not click **Move to Trash**.
 2. Open **System Settings** and click **Privacy & Security** in the sidebar.
-3. Scroll down to **Security**. There is a line saying that "HL3070CW-Driver-0.5.2.pkg" was
+3. Scroll down to **Security**. There is a line saying that "HL3070CW-Driver-0.5.3.pkg" was
    blocked to protect your Mac. Click **Open Anyway** next to it. The button appears only for
    about an hour after you tried to open the file; if it is missing, double-click the file again
    first.
@@ -159,7 +160,7 @@ If you are comfortable with Terminal, this removes the download mark from the fi
 which a double-click opens it directly:
 
 ```sh
-xattr -d com.apple.quarantine ~/Downloads/HL3070CW-Driver-0.5.2.pkg
+xattr -d com.apple.quarantine ~/Downloads/HL3070CW-Driver-0.5.3.pkg
 ```
 
 ### 4. Run the installer
@@ -319,8 +320,8 @@ on Debian 12, Debian 13 and Ubuntu 24.04 before a release. 32-bit systems are no
 
    ```sh
    sudo apt install cups cups-filters libarchive-tools
-   tar -xzf ~/Downloads/HL3070CW-Driver-0.5.2-linux-arm64.tar.gz
-   cd HL3070CW-Driver-0.5.2-linux-arm64
+   tar -xzf ~/Downloads/HL3070CW-Driver-0.5.3-linux-arm64.tar.gz
+   cd HL3070CW-Driver-0.5.3-linux-arm64
    ```
 
 3. Install it with the path of Brother's package. To add the printer at the same time, give it a
@@ -379,7 +380,7 @@ make
 ```
 
 To share an HL-3070CW with every computer and phone in the house over AirPrint, run it as a print
-server in Docker, for example on a Raspberry Pi: see [docker/README.md](docker/README.md). Use 0.5.2
+server in Docker, for example on a Raspberry Pi: see [docker/README.md](docker/README.md). Use 0.5.3
 or newer for it: the earlier ones have security flaws.
 
 ## What works
@@ -519,9 +520,10 @@ files that belong to root and are not writable by everyone.
 The code has been reviewed for security problems by its authors, with sanitizer builds, damaged
 input files and static analysis. Those reviews are not a guarantee: they missed flaws in that
 copying step, which were found with CodeQL's help and fixed in 0.5.0, and flaws in the Docker print
-server's access rules, fixed in 0.5.2. No outside party has audited the code. `make check` and
-`make lint` repeat the tests. GitHub runs both on every push to `main` and `dev`, along with CodeQL,
-which scans the Mac build.
+server's access rules, fixed in 0.5.2. The print server also passed jobs in a format it did not
+know to the printer unchanged, past the driver, fixed in 0.5.3. No outside party has audited the
+code. `make check` and `make lint` repeat the tests. GitHub runs both on every push to `main` and
+`dev`, along with CodeQL, which scans the Mac build.
 
 Like Brother's driver, this one sends the title of the document and your user name to the
 printer with every job, and the connection to the printer is not encrypted. Use the printer on a
@@ -535,6 +537,22 @@ members of the `adm` group can. The Docker print server switches this logging of
 its `LOG_LEVEL` to `debug`.
 
 To report a security problem, see [SECURITY.md](SECURITY.md).
+
+## Disclaimer
+
+This driver is free software, provided as it is and without any warranty. It was worked out from
+what Brother's driver sends to the printer, not from any documentation by Brother, and only the
+HL-3070CW has printed with it. It can print pages wrongly, use up paper and toner, leave the printer
+showing an error, or stop working after an update of macOS, Linux or the printer's firmware.
+
+You use it at your own risk. As far as the law allows, the authors and contributors are not liable
+for any damage that comes from using the driver or the print server, for example to a printer, to
+documents or data, or through a security flaw. This does not exclude or limit liability where the
+law does not allow that, such as for intent or gross negligence. The [MIT License](LICENSE) applies
+as well.
+
+The native driver uses data files from Brother's own driver, which you download and install
+yourself. Whether Brother's licence allows your use of them is for you to check.
 
 ## License and trademarks
 
