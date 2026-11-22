@@ -9,17 +9,18 @@
 #   PRINTER_DRIVER    native or postscript             (default native)
 #   PRINTER_OPTIONS   default options, e.g. "BRMonoColor=Mono"
 #   LISTEN            address:port to listen on, e.g. 10.13.10.3:631 (default *:631)
-#   ALLOW_FROM        who may print: addresses or networks (default @LOCAL)
+#   ALLOW_FROM        who may print: addresses or networks, * for everyone
+#                     (default @LOCAL)
 #   PRINTER_UUID      the printer's UUID; default: derived from name and LISTEN,
 #                     so it stays the same across restarts (AirPrint clients
 #                     and an Avahi service file identify the printer by it)
 #   PRINTER_COLOR     yes, or no while a colour toner is empty: clients then
 #                     see a black-and-white printer and every job prints in
 #                     Mono (default yes)
-#   WEB_FROM          addresses that may use the web interface and its
-#                     administration, e.g. a reverse proxy that does the
-#                     login; administration from there needs no CUPS login
-#                     (default: no web interface)
+#   WEB_FROM          IP addresses or networks (CIDR) that may use the web
+#                     interface and its administration, e.g. a reverse proxy
+#                     that does the login; the web interface needs no CUPS
+#                     login for them (default: no web interface)
 #   LOG_LEVEL         warn, info or debug (default warn); debug logs each
 #                     job's settings, Secure Print PIN included
 #
@@ -33,6 +34,7 @@ shopt -s inherit_errexit
 set -f
 
 readonly FILTER=/usr/lib/cups/filter/rastertohl3070cw
+readonly WEB_GATE=/usr/local/sbin/web-gate
 readonly UNPACK_DIR=/usr/share/hl3070cw-native/unpack # where the filter looks for a package (--unpacked)
 readonly CUPS_TEMPLATE=/usr/share/hl3070cw-print-server-etc-cups
 # hl3070cwlpr-1.1.2-1.i386.rpm, the package this driver is tested with
@@ -60,9 +62,22 @@ main() {
     safe "PRINTER_COLOR" "$colour" '^(yes|no)$'
     safe "WEB_FROM" "$web" '^[A-Za-z0-9.:/ -]*$'
     safe "LOG_LEVEL" "$loglevel" '^(warn|info|debug)$'
+    # "*" alone means everyone, which CUPS calls "all": to CUPS a * starts the
+    # end of a host name, and an empty one matches nobody
+    local entry every=''
+    for entry in $allow; do
+        [[ $entry != '*' ]] || entry=all
+        every+="${every:+ }$entry"
+    done
+    allow=$every
     local uuid=${PRINTER_UUID:-$(stable_uuid "hl3070cw-print-server/$name/$listen")}
     safe "PRINTER_UUID" "$uuid" '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 
+    local entries
+    read -ra entries <<<"$web"
+    if ((${#entries[@]})); then
+        "$WEB_GATE" --check "${entries[@]}" || die "WEB_FROM takes IP addresses and networks like 192.0.2.0/24, no names"
+    fi
     configure_cups "$listen" "$allow" "$web" "$loglevel"
     if [[ $driver == native ]]; then
         copy_brother_data
@@ -123,6 +138,8 @@ configure_cups() {
     local listen=$1 allow=$2 web=$3 loglevel=$4 a
     # /etc/cups is an empty tmpfs: start from the configuration the package installed
     cp -a "$CUPS_TEMPLATE/." /etc/cups/
+    printf '%s\n' "$web" >/etc/cups/web-from # read by the web gate
+    chmod 644 /etc/cups/web-from
     {
         printf '%s\n' \
             '# Written by the print server at every start; changes here do not last.' \
@@ -174,6 +191,17 @@ configure_cups() {
             printf '</Location>\n'
         fi
         printf '<Location /admin/conf>\n  AuthType Default\n  Require user @SYSTEM\n  Order allow,deny\n  Allow from 127.0.0.1\n</Location>\n'
+        # Three things to know about CUPS before changing this:
+        # - without an AuthType, "Require user" believes the user name a client sends;
+        # - localhost always passes "Satisfy any", and every web form reaches CUPS
+        #   as localhost, as does any process on the host with network_mode host;
+        # - so "Satisfy any" is only for what everybody who may print may do.
+        # tests/print-server/access.py tests the result.
+        local operators='@SYSTEM'
+        # Administration from the web interface: its programs prove to be "lp" with
+        # the socket's peer credentials, which web-gate lets them do for WEB_FROM
+        # alone. Nothing outside the container can reach that socket.
+        [[ -z $web ]] || operators='@SYSTEM lp'
         printf '%s\n' \
             '<Policy default>' \
             '  JobPrivateAccess default' \
@@ -183,24 +211,33 @@ configure_cups() {
             '  <Limit Create-Job Print-Job Print-URI Validate-Job>' \
             '    Order deny,allow' \
             '  </Limit>' \
-            '  <Limit Send-Document Send-URI Hold-Job Release-Job Restart-Job Purge-Jobs Set-Job-Attributes Create-Job-Subscription Renew-Subscription Cancel-Subscription Get-Notifications Reprocess-Job Cancel-Current-Job Suspend-Current-Job Resume-Job Cancel-My-Jobs Close-Job CUPS-Move-Job CUPS-Get-Document>' \
+            '  # by the user name the client sends: what AirPrint needs, nothing that shows or changes a job' \
+            '  <Limit Send-Document Send-URI Hold-Job Release-Job Create-Job-Subscription Renew-Subscription Cancel-Subscription Get-Notifications Cancel-Current-Job Suspend-Current-Job Resume-Job Cancel-My-Jobs Close-Job>' \
             '    Require user @OWNER @SYSTEM' \
             '    Order deny,allow' \
             '  </Limit>' \
-            '  <Limit Cancel-Job CUPS-Authenticate-Job>' \
+            '  # with a login (there are no accounts): a job with its document and PIN' \
+            '  <Limit CUPS-Get-Document Set-Job-Attributes CUPS-Move-Job Restart-Job Reprocess-Job Purge-Jobs CUPS-Authenticate-Job>' \
+            '    AuthType Default' \
+            '    Require user @OWNER @SYSTEM' \
+            '    Order deny,allow' \
+            '  </Limit>' \
+            '  <Limit Cancel-Job>' \
             '    AuthType Default' \
             '    Require user @OWNER @SYSTEM'
         # whoever may print may cancel any job, as with the printer's Cancel
         # button: the web interface asks CUPS under a name that is not the
         # job owner's, so an owner-only rule makes its Cancel fail
-        trusted_web "$allow${web:+ $web}"
+        printf '    Satisfy any\n    Order deny,allow\n    Deny from all\n    Allow from 127.0.0.1\n'
+        for a in $allow $web; do
+            printf '    Allow from %s\n' "$a"
+        done
         printf '%s\n' \
             '  </Limit>' \
-            '  <Limit CUPS-Add-Modify-Printer Set-Printer-Attributes CUPS-Delete-Printer CUPS-Add-Modify-Class CUPS-Delete-Class CUPS-Set-Default CUPS-Get-Devices Pause-Printer Resume-Printer Enable-Printer Disable-Printer Pause-Printer-After-Current-Job Hold-New-Jobs Release-Held-New-Jobs Deactivate-Printer Activate-Printer Restart-Printer Shutdown-Printer Startup-Printer Promote-Job Schedule-Job-After Cancel-Jobs CUPS-Accept-Jobs CUPS-Reject-Jobs>' \
+            '  <Limit CUPS-Add-Modify-Printer CUPS-Create-Local-Printer Set-Printer-Attributes CUPS-Delete-Printer CUPS-Add-Modify-Class CUPS-Delete-Class CUPS-Set-Default CUPS-Get-Devices Pause-Printer Resume-Printer Enable-Printer Disable-Printer Pause-Printer-After-Current-Job Hold-New-Jobs Release-Held-New-Jobs Deactivate-Printer Activate-Printer Restart-Printer Shutdown-Printer Startup-Printer Promote-Job Schedule-Job-After Cancel-Jobs CUPS-Accept-Jobs CUPS-Reject-Jobs>' \
             '    AuthType Default' \
-            '    Require user @SYSTEM'
-        trusted_web "$web"
-        printf '%s\n' \
+            "    Require user $operators" \
+            '    Order deny,allow' \
             '  </Limit>' \
             '  <Limit All>' \
             '    Order deny,allow' \
@@ -211,20 +248,6 @@ configure_cups() {
     sed -i -e 's|^#\{0,1\}ErrorLog .*|ErrorLog stderr|' -e 's|^#\{0,1\}AccessLog .*|AccessLog stderr|' \
         -e 's|^#\{0,1\}PageLog .*|PageLog stderr|' /etc/cups/cups-files.conf
     grep -q '^ErrorLog stderr' /etc/cups/cups-files.conf || printf 'ErrorLog stderr\nAccessLog stderr\nPageLog stderr\n' >>/etc/cups/cups-files.conf
-}
-
-# Inside a policy Limit: WEB_FROM passes by its address alone (its proxy did
-# the login); everyone else still needs what the Limit requires.
-trusted_web() {
-    local a
-    if [[ -z $1 ]]; then
-        printf '    Order deny,allow\n'
-        return
-    fi
-    printf '    Satisfy any\n    Order deny,allow\n    Deny from all\n    Allow from 127.0.0.1\n'
-    for a in $1; do
-        printf '    Allow from %s\n' "$a"
-    done
 }
 
 copy_brother_data() {

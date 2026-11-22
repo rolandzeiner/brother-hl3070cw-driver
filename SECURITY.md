@@ -17,6 +17,8 @@ one, a file that shows the problem.
   changes while it runs.
 - `install.sh`, `install-linux.sh`, `uninstall.sh` and the installer package, which run with
   administrator rights.
+- The Docker print server's access rules: who may print, read or change jobs, and administer, as
+  `docker/README.md` lists them and `tests/print-server/access.py` tests them.
 
 The Python tools in `tools/` are for development only and are not installed.
 
@@ -58,8 +60,9 @@ are left as they are.
 - with `--uninstall`, removes the filter, the PPDs and `/usr/share/hl3070cw-native`.
 
 The print server's container starts as root without Linux capabilities it does not need, copies
-Brother's data the same way at every start and writes CUPS's configuration. CUPS runs the filter as
-`lp`.
+Brother's data the same way at every start and writes CUPS's configuration. CUPS runs the filter and
+the web interface's programs as `lp`. `web-gate` stands in front of those programs: only for an
+address in `WEB_FROM` can they administer.
 
 ## Supported versions
 

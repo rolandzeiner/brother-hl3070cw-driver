@@ -19,6 +19,10 @@ WORKDIR /src
 COPY Makefile ./
 COPY src ./src
 RUN make && build/rastertohl3070cw --version
+# the gate in front of CUPS's web programs (docker/web-gate.c)
+COPY docker/web-gate.c ./
+RUN cc -O2 -std=c11 -D_XOPEN_SOURCE=700 -Wall -Wextra -Werror -fstack-protector-strong -D_FORTIFY_SOURCE=3 \
+      -fPIE -pie -Wl,-z,relro,-z,now -o build/web-gate web-gate.c
 
 FROM debian:${DEBIAN}
 # CUPS (scheduler, PPD lister, socket backend) and the filters that turn PDF,
@@ -40,6 +44,11 @@ RUN chmod 755 /usr/lib/cups/filter/rastertohl3070cw /usr/local/bin/print-server 
  && chmod 644 /usr/share/ppd/hl3070cw/*.ppd
 # the web interface's look: stylesheet, start page, header and footer
 RUN --mount=type=bind,source=docker/web,target=/tmp/web sh /tmp/web/patch-templates.sh
+# every web program gets the gate in front of it
+COPY --from=build /src/build/web-gate /usr/local/sbin/web-gate
+RUN set -eu; cd /usr/lib/cups/cgi-bin; install -d -m 755 ../cgi-real; n=0; \
+    for f in *.cgi; do mv "$f" "../cgi-real/$f"; install -m 755 /usr/local/sbin/web-gate "$f"; n=$((n + 1)); done; \
+    [ "$n" -ge 5 ]
 
 EXPOSE 631
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
