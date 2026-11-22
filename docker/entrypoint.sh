@@ -148,7 +148,6 @@ configure_cups() {
             'LogDebugHistory 0' \
             'MaxLogSize 0' \
             'AccessLogLevel config' \
-            'PageLogFormat ""' \
             'ErrorPolicy retry-job' \
             '# a finished job stays listed for a day: an iPhone asks for its job after' \
             '# printing and, when the job is gone, sends it again, over and over. Its' \

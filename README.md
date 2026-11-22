@@ -404,12 +404,13 @@ the same data, untested on paper.
 The driver has been tested with an HL-3070CW connected over Wi-Fi. Ethernet and USB should work the
 same way but have not been tested.
 
-With versions 0.4.0 and 0.4.1, black-and-white pages have been printed on paper from a Mac and
-through a Raspberry Pi, in Normal and in Fine quality, and as Secure Print jobs released on the
-printer's panel with their PIN. Later versions give the same printer data for such pages in the
-project's tests and have not been printed on paper yet. Colour has so far only been compared with
-the data Brother's driver produces, because the test printer's cyan cartridge is empty. If a colour
-page looks wrong, please
+With version 0.5.2, black-and-white pages have been printed on paper from a Mac with the native
+driver, in Normal and in Fine quality, and over AirPrint through the print server on a Raspberry Pi,
+in Draft, Normal and Best quality. A cancelled job stopped on the page it had started, and the next
+job printed normally. Secure Print was last tested on paper with versions 0.4.0 and 0.4.1: the jobs
+were released on the printer's panel with their PIN. Colour has so far only been compared with the
+data Brother's driver produces, because the test printer's cyan cartridge is empty. If a colour page
+looks wrong, please
 [open an issue](https://github.com/rolandzeiner/brother-hl3070cw-driver/issues).
 
 Like other printer drivers of this kind (Brother's included), it is a PPD-based driver. macOS 27 and
