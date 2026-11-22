@@ -354,13 +354,13 @@ The remaining differences are in this choice, never in what is printed;
 
 ## Verification
 
-* `make test` compares the filter with checksums of 55 outputs of Brother's
+* `make test` compares the filter with checksums of 62 outputs of Brother's
   filter (`tests/fixtures.sha256`; inputs are regenerated from fixed seeds):
   dots, random black/white pages on A6 and A4, all 256 greys, 1500 random
   colours in Mono, Toner Save, Improve Output, manual feed, media types, all
   22 paper sizes, multi-page jobs, title and user, and in colour: table-edge
-  colours in every colour option, greys and black content; and ten Fine jobs
-  in Mono and colour. Fine checksums cover what is printed (the job without
+  colours in every colour option, greys and black content; Secure Print and
+  Enhance Black; and twelve Fine jobs in Mono and colour. Fine checksums cover what is printed (the job without
   its band encoding, plus every decoded row, `tools/fineimage.py`), the others
   the bytes. Works without Rosetta. The outputs themselves contain Brother's
   halftone patterns and are not in the repository; `make fixtures` keeps them

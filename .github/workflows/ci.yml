@@ -31,7 +31,8 @@ jobs:
       - name: Build (arm64 + x86_64)
         run: |
           make
-          lipo -archs build/rastertohl3070cw
+          # one at a time: lipo takes a second name after -verify_arch for another input file
+          for arch in arm64 x86_64; do lipo build/rastertohl3070cw -verify_arch "$arch"; done
           codesign --verify --strict --verbose build/rastertohl3070cw
       - name: Self-test with sanitizers
         run: make check
@@ -102,8 +103,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Build on Debian 12 (glibc 2.36, for older distributions too)
+        # debian:12 as of 2026-11-05, for both processors; Dependabot does not move this pin
+        env:
+          BUILDER: debian:12@sha256:268fb24c39bca92d326dd83ea3abebe4a3f7751c804ffef23bb6d857dd343ff8
         run: |
-          docker run --rm -v "$PWD:/src" -w /src debian:12 sh -ec '
+          docker run --rm -v "$PWD:/src" -w /src "$BUILDER" sh -ec '
             apt-get update -qq
             apt-get install -y -qq --no-install-recommends gcc libc6-dev make libcups2-dev >/dev/null
             make dist'
@@ -120,6 +124,28 @@ jobs:
           name: driver-linux-${{ matrix.arch }}
           path: build/dist/*.tar.gz
           if-no-files-found: error
+
+  attest:
+    name: Attest the release files
+    # main's builds are the ones releases are made of
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [check, linux-package]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: driver-*
+          path: release
+          merge-multiple: true
+      # attest-build-provenance is a wrapper around this action since its v4
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: release/*
 
   lint:
     name: Lint

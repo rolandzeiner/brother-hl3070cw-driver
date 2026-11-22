@@ -27,7 +27,9 @@ body:
     id: version
     attributes:
       label: Driver version
-      description: The version in the installer's file name, or the output of `rastertohl3070cw --version`.
+      description: |
+        The version in the installer's file name, or what this prints:
+        On a Mac `/Library/Printers/HL3070CW-Native/rastertohl3070cw --version`, on Linux `/usr/lib/cups/filter/rastertohl3070cw --version`, for the print server `docker exec print-server /usr/lib/cups/filter/rastertohl3070cw --version`.
       placeholder: e.g. 0.5.0
     validations:
       required: true
@@ -38,6 +40,31 @@ body:
       label: System
       description: The macOS version, or the Linux distribution and processor.
       placeholder: e.g. macOS 27.0.1 on Apple silicon, or Raspberry Pi OS 13 (64-bit)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: connection
+    attributes:
+      label: How is the printer connected?
+      options:
+        - Wi-Fi
+        - Ethernet
+        - USB
+        - Through a print server
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: paper
+    attributes:
+      label: Did paper come out?
+      options:
+        - No
+        - Yes, with the wrong content or look
+        - Yes, blank
+        - Only some of the pages
     validations:
       required: true
 
@@ -71,6 +98,13 @@ body:
         1. Open a PDF in Preview
         2. Print page 3 with these settings
         3. …
+
+  - type: textarea
+    id: queue
+    attributes:
+      label: Printer queue
+      description: The output of `LC_ALL=C lpstat -l -p` (macOS may answer in your language all the same, that's fine).
+      render: text
 
   - type: textarea
     id: logs

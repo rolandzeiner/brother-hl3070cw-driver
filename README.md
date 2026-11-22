@@ -77,6 +77,13 @@ Open the [latest release](https://github.com/rolandzeiner/brother-hl3070cw-drive
 Under **Assets**, click the file ending in `.pkg` (for example `HL3070CW-Driver-0.5.0.pkg`). It
 goes to your Downloads folder.
 
+To check that a file was built by GitHub from this repository (releases after 0.5.0, with the
+[GitHub CLI](https://cli.github.com)):
+
+```sh
+gh attestation verify ~/Downloads/FILE --repo rolandzeiner/brother-hl3070cw-driver
+```
+
 ### 3. Open the installer
 
 Double-click the downloaded file. The first time, macOS refuses to open it:
@@ -175,7 +182,7 @@ your user name and the document with **+** and **−**, and enter the PIN.
 **macOS says the installer cannot be opened.** See [step 3](#3-open-the-installer).
 
 **"Brother HL-3070CW, native driver (open source)" is not in the list of drivers.** Brother's driver
-files were not found when you installed. Install Brother's driver
+files were not found or not complete when you installed. Install Brother's driver
 ([step 1](#1-check-for-brothers-driver)) and run this installer again. Until then, use
 **Brother HL-3070CW, PostScript (BR-Script 3)**.
 
@@ -257,6 +264,8 @@ on Debian 12, Debian 13 and Ubuntu 24.04 before a release. 32-bit systems are no
    sudo ./install-linux.sh --brother-package ~/Downloads/hl3070cwlpr-1.1.2-1.i386.rpm \
        --queue HL3070CW --uri socket://192.0.2.10:9100
    ```
+
+   For an rpm other than the one this was tested with, the installer prints a warning and goes on.
 
    Without `--queue`, add the printer in your system's printer settings and choose
    **Brother HL-3070CW, native driver (open source)** as the driver.
