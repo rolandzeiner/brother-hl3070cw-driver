@@ -30,7 +30,7 @@ fixes; Debian stable stays on CUPS 2.4.10. To build on stable anyway, pass
 services:
   print-server:
     build:
-      context: https://github.com/rolandzeiner/brother-hl3070cw-driver.git#<release tag or commit>
+      context: https://github.com/rolandzeiner/brother-hl3070cw-driver.git#v0.5.0   # a release tag, or a commit
       dockerfile: docker/Dockerfile
       network: host                 # only if a firewall blocks traffic from Docker networks
     image: hl3070cw-print-server:local

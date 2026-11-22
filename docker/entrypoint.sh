@@ -30,7 +30,7 @@ set -Eeuo pipefail
 shopt -s inherit_errexit
 
 readonly FILTER=/usr/lib/cups/filter/rastertohl3070cw
-readonly DATA_DIR=/usr/share/hl3070cw-native/data
+readonly UNPACK_DIR=/usr/share/hl3070cw-native/unpack # where the filter looks for a package (--unpacked)
 readonly CUPS_TEMPLATE=/usr/share/hl3070cw-print-server-etc-cups
 
 CUPSD_PID=''
@@ -223,19 +223,24 @@ trusted_web() {
 }
 
 copy_brother_data() {
-    local pkg tmp
+    local pkg dest=$UNPACK_DIR/package
     pkg=$(find /brother -maxdepth 1 -type f \( -name 'hl3070cwlpr*.rpm' -o -name 'hl3070cwlpr*.deb' \) 2>/dev/null | head -n 1)
     [[ -n $pkg ]] || die "Brother's Linux driver package (hl3070cwlpr .rpm or .deb) is not in /brother; mount the folder that holds it at /brother, or set PRINTER_DRIVER=postscript"
-    tmp=$(mktemp -d)
+    # as in install-linux.sh: inside a folder only root can enter, and
+    # without the package's owners and modes
+    rm -rf -- "${UNPACK_DIR:?}"
+    install -d -m 755 -- "${UNPACK_DIR%/*}" # a tmpfs in docker/README.md's setup, absent without
+    mkdir -m 700 -- "$UNPACK_DIR"
+    mkdir -m 755 -- "$dest"
     case "$pkg" in
-    *.rpm) bsdtar -xf "$pkg" -C "$tmp" ;;
-    *.deb) dpkg-deb -x "$pkg" "$tmp" ;;
+    *.rpm) (umask 022 && bsdtar --no-same-owner --no-same-permissions -xf "$pkg" -C "$dest") ;;
+    *.deb) (umask 022 && dpkg-deb --fsys-tarfile "$pkg" | tar --no-same-owner --no-same-permissions -xf - -C "$dest") ;;
     esac
-    if ! "$FILTER" --extract-brother-data "$DATA_DIR" "$tmp" >/dev/null; then
-        rm -rf -- "${tmp:?}"
+    if ! "$FILTER" --extract-brother-data --unpacked >/dev/null; then
+        rm -rf -- "${UNPACK_DIR:?}"
         die "copying Brother's data from ${pkg##*/} failed"
     fi
-    rm -rf -- "${tmp:?}"
+    rm -rf -- "${UNPACK_DIR:?}"
     log "Brother's data taken from ${pkg##*/}"
 }
 

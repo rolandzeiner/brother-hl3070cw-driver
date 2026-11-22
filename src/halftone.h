@@ -12,17 +12,6 @@
 
 #include "color.h"
 
-/* Where Brother's driver package installs its halftone data: its macOS
- * driver, or on Linux its LPR driver for the HL-3070CW. (The self-test build
- * points this somewhere empty, see the Makefile.) */
-#ifndef BROTHER_LUT_DIR
-#ifdef __APPLE__
-#define BROTHER_LUT_DIR "/Library/Printers/Brother/Brother LUT/"
-#else
-#define BROTHER_LUT_DIR "/opt/brother/Printers/hl3070cw/inf/lut/"
-#endif
-#endif
-
 /* Brother's tiles are at most 160 x 80; anything far beyond is a wrong file. */
 #define BRCD_MAX_SIDE 512
 

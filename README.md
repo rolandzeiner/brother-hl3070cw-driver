@@ -1,13 +1,15 @@
-# Brother HL-3070CW driver for Apple Silicon Macs
+# Brother HL-3070CW driver for macOS and Linux
 
 [![Latest release](https://img.shields.io/github/v/release/rolandzeiner/brother-hl3070cw-driver?label=download)](https://github.com/rolandzeiner/brother-hl3070cw-driver/releases/latest)
 ![macOS 11 or newer](https://img.shields.io/badge/macOS-11%2B-blue)
+![Linux x86_64 and arm64](https://img.shields.io/badge/Linux-x86__64%20%26%20arm64-blue)
 ![Apple Silicon and Intel](https://img.shields.io/badge/Apple%20Silicon%20%26%20Intel-native-green)
 ![Status: beta](https://img.shields.io/badge/status-beta-orange)
 [![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 [![vibe-coded](https://img.shields.io/badge/vibe-coded-ff69b4?logo=musicbrainz&logoColor=white)](https://en.wikipedia.org/wiki/Vibe_coding)
 
-Keep printing on your Brother HL-3070CW colour laser printer with a current Mac.
+Keep printing on your Brother HL-3070CW colour laser printer with a current Mac, a Linux PC or a
+Raspberry Pi.
 
 Brother's own macOS driver for this printer contains a program for Intel processors. On Apple
 Silicon Macs it only runs through Rosetta 2, which Apple keeps available only through macOS 27.
@@ -33,6 +35,8 @@ This project is not made or endorsed by Brother.
 - [License and trademarks](#license-and-trademarks)
 
 ## Install
+
+These steps are for a Mac. On Linux, follow [Linux and Raspberry Pi](#linux-and-raspberry-pi).
 
 You need a Mac with macOS 11 Big Sur or newer and an administrator password. You do not need a
 GitHub account or any developer tools.
@@ -65,15 +69,15 @@ without Brother's files.
 ### 2. Download the installer
 
 Open the [latest release](https://github.com/rolandzeiner/brother-hl3070cw-driver/releases/latest).
-Under **Assets**, click the file ending in `.pkg` (for example `HL3070CW-Driver-0.4.1.pkg`). It
+Under **Assets**, click the file ending in `.pkg` (for example `HL3070CW-Driver-0.5.0.pkg`). It
 goes to your Downloads folder.
 
 ### 3. Open the installer
 
 Double-click the downloaded file. The first time, macOS refuses to open it:
 
-> **"HL3070CW-Driver-0.4.1.pkg" Not Opened**
-> Apple could not verify "HL3070CW-Driver-0.4.1.pkg" is free of malware that may harm your Mac or
+> **"HL3070CW-Driver-0.5.0.pkg" Not Opened**
+> Apple could not verify "HL3070CW-Driver-0.5.0.pkg" is free of malware that may harm your Mac or
 > compromise your privacy.
 
 macOS shows this for every installer that is not signed with a paid Apple developer certificate,
@@ -82,7 +86,7 @@ To open it anyway:
 
 1. Click **Done**. Do not click **Move to Trash**.
 2. Open **System Settings** and click **Privacy & Security** in the sidebar.
-3. Scroll down to **Security**. There is a line saying that "HL3070CW-Driver-0.4.1.pkg" was
+3. Scroll down to **Security**. There is a line saying that "HL3070CW-Driver-0.5.0.pkg" was
    blocked to protect your Mac. Click **Open Anyway** next to it. The button appears only for
    about an hour after you tried to open the file; if it is missing, double-click the file again
    first.
@@ -95,7 +99,7 @@ If you are comfortable with Terminal, this removes the download mark from the fi
 which a double-click opens it directly:
 
 ```sh
-xattr -d com.apple.quarantine ~/Downloads/HL3070CW-Driver-0.4.1.pkg
+xattr -d com.apple.quarantine ~/Downloads/HL3070CW-Driver-0.5.0.pkg
 ```
 
 ### 4. Run the installer
@@ -201,23 +205,25 @@ and describe what you printed and what happened. A GitHub account is needed for 
 ## Linux and Raspberry Pi
 
 The driver also runs on Linux with CUPS, for example on a Raspberry Pi, which can then offer the
-printer to every computer and phone in the house. It has been tested on a Raspberry Pi with
-Raspberry Pi OS (Debian 13, 64-bit) and is built and tested on Ubuntu for 64-bit Intel and ARM
-processors. For now you build it from source.
+printer to every computer and phone in the house. Each release has a package for 64-bit ARM and one
+for 64-bit Intel and AMD, both with the native and the PostScript driver. They need Debian 12,
+Raspberry Pi OS 12, Ubuntu 24.04 or newer. Each is installed and printed through CUPS automatically
+on Debian 12, Debian 13 and Ubuntu 24.04 before a release. 32-bit systems are not supported.
 
-1. Download Brother's Linux driver for the HL-3070CW from Brother's
+1. For the native driver, download Brother's Linux driver for the HL-3070CW from Brother's
    [HL-3070CW download page](https://support.brother.com/g/b/downloadtop.aspx?c=us&lang=en&prod=hl3070cw_all):
    choose **Linux**, then the **LPR printer driver** as an rpm or a deb package. Brother made it
    for Intel PCs, but the installer only takes the halftone patterns and colour tables out of it
    and never runs Brother's program, so it serves a Raspberry Pi as well. This project was tested
    with `hl3070cwlpr-1.1.2-1.i386.rpm`.
-2. Install the tools and build the driver:
+2. From the [latest release](https://github.com/rolandzeiner/brother-hl3070cw-driver/releases/latest),
+   download the package for your processor (`uname -m` shows it): `linux-arm64` for `aarch64`,
+   `linux-x86_64` for `x86_64`. Install what it needs and unpack it, here for a Raspberry Pi:
 
    ```sh
-   sudo apt install build-essential libcups2-dev cups libarchive-tools git
-   git clone https://github.com/rolandzeiner/brother-hl3070cw-driver.git
-   cd brother-hl3070cw-driver
-   make
+   sudo apt install cups cups-filters libarchive-tools
+   tar -xzf ~/Downloads/HL3070CW-Driver-0.5.0-linux-arm64.tar.gz
+   cd HL3070CW-Driver-0.5.0-linux-arm64
    ```
 
 3. Install it with the path of Brother's package. To add the printer at the same time, give it a
@@ -229,7 +235,8 @@ processors. For now you build it from source.
    ```
 
    Without `--queue`, add the printer in your system's printer settings and choose
-   **Brother HL-3070CW, native driver (open source)** as the driver.
+   **Brother HL-3070CW, native driver (open source)** as the driver. For the PostScript driver,
+   which needs no files of Brother's, leave out `--brother-package` and add `--postscript`.
 
 All options work as on a Mac, Fine and Secure Print included (`lp -o job-password=1234 file`). Two
 differences:
@@ -240,8 +247,19 @@ differences:
 - If a firewall on the Linux machine blocks outgoing connections, allow port 9100 (printing) and
   161/udp (printer status) to the printer.
 
-To update, run `git pull`, `make` and the installer again; printers keep their settings. To
-remove the driver: `sudo ./install-linux.sh --uninstall`.
+To update, unpack the newest release and run its `sudo ./install-linux.sh`; printers keep their
+settings, and Brother's package is not needed again. To remove the driver:
+`sudo ./install-linux.sh --uninstall`.
+
+To build it yourself instead of step 2:
+
+```sh
+sudo apt install build-essential libcups2-dev cups cups-filters libarchive-tools git
+umask 022    # the installer refuses files that others may change
+git clone https://github.com/rolandzeiner/brother-hl3070cw-driver.git
+cd brother-hl3070cw-driver
+make
+```
 
 To share the printer with every computer and phone in the house over AirPrint, run it as a print
 server in Docker, for example on a Raspberry Pi: see [docker/README.md](docker/README.md).
@@ -304,7 +322,8 @@ make lint            # clang-tidy or the Clang analyzer, shellcheck, cupstestppd
 make test            # compare with checksums of Brother's output (needs Brother's data files, no Rosetta)
 make oracle-test     # compare live with Brother's driver (needs it and Rosetta 2)
 python3 -I tools/finecheck.py --real   # Fine: image and line-by-line comparison
-make pkg             # the installer package, in build/pkg/
+make pkg             # macOS: the installer package, in build/pkg/
+make dist            # Linux: the release package for this processor, in build/dist/
 ./install.sh         # install from the source tree (asks for the admin password)
 ./install.sh --queue NAME                              # also switch printer queue NAME to the native driver
 ./install.sh --queue NAME --uri socket://192.0.2.10:9100   # create a queue
@@ -325,6 +344,9 @@ Repository layout:
 - `ppd/`: the two PPD files, generated by `tools/genppd.py`; `ppd/linux/` holds the native one for
   Linux.
 - `install-linux.sh`: the Linux installer.
+- `tests/linux-package.sh`: installs a Linux release package in a throwaway container, prints
+  through CUPS and uninstalls it again. GitHub runs it for both processors.
+- `tests/macos-package.sh`: the same for the Mac installer, on GitHub's build machines only.
 - `packaging/`: the installer package (`make pkg`).
 - `tools/`: the Python tools used to work out and check the format: raster writer, PCL XL parser,
   band decoder, measurement scripts and the comparisons with Brother's driver.
@@ -347,9 +369,15 @@ allocates memory or writes anything, and refuses pages larger than the printer c
 inside the sandbox macOS puts around printer drivers: it reads its data files and the print job,
 writes the printer data, and does nothing else.
 
-The code has been reviewed for security problems twice by its authors, with sanitizer builds,
-damaged input files and static analysis, and the findings were fixed. No outside party has audited
-it. `make check` and `make lint` repeat those tests, and GitHub runs both on every change.
+The installers run one step of the driver as root: copying Brother's data. That step takes no
+paths from its command line, follows no symbolic links inside Brother's package and uses only
+files that belong to root and that others cannot change.
+
+The code has been reviewed for security problems by its authors, with sanitizer builds, damaged
+input files and static analysis. Those reviews are not a guarantee: they missed flaws in that
+copying step, which were found with CodeQL's help and fixed in 0.5.0. No outside party has audited
+the code. `make check` and `make lint` repeat the tests, and GitHub runs both, and CodeQL, on every
+change.
 
 Like Brother's driver, this one sends the title of the document and your macOS user name to the
 printer with every job, and the connection to the printer is not encrypted. Use the printer on a

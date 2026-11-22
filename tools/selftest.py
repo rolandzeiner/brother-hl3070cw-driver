@@ -17,6 +17,9 @@ holds for any data:
   but in its PJL line; Enhance Black Printing reaches colour jobs only;
 * damaged print data and damaged data files end in an error message, never
   in a crash or a memory error;
+* copying Brother's data out of a package follows no symlink, takes no path
+  from the command line and, as root (run this file with sudo), nothing that
+  another user owns or everyone may write to;
 * a cancelled job is never an error, starts no page it has no line of, and
   what it has started is sent whole;
 * the C Fine encoder writes the same bytes as the Python reference
@@ -29,6 +32,7 @@ import argparse
 import fcntl
 import os
 import random
+import shutil
 import signal
 import struct
 import subprocess
@@ -542,10 +546,159 @@ def check_usage() -> None:
     check(res.returncode == 1 and b"ERROR:" in res.stderr, "missing file: want an error")
     with tempfile.TemporaryDirectory() as td:
         # Brother's driver is "not installed" in this build: copying its data must fail cleanly
-        res = subprocess.run([FILTER, "--extract-brother-data", os.path.join(td, "data")], capture_output=True, env=env,
-                             check=False)
+        res = subprocess.run([FILTER, "--extract-brother-data"], capture_output=True, check=False,
+                             env={**env, "HL3070CW_DATA": os.path.join(td, "data")})
         check(res.returncode == 1 and b"Sanitizer" not in res.stderr, "--extract-brother-data without Brother's driver")
     print("OK   command line")
+
+
+def brother_tables() -> bytes:
+    """A stand-in for Brother's filter program: just its named colour tables."""
+    out = bytearray(b"\x7fELF")
+    for mode in ("600dpi", "CAPT"):
+        for gray in ("ON", "OFF"):
+            for match in ("Match Monitor", "Vivid", "None (Table Type)"):
+                name = f"HL-30xxC {mode} ImpGray={gray} Ver1 {match}".encode()
+                out += b"junk" + name + b"\0" + bytes([sum(name) & 255]) * (17 ** 3 * 8)
+    return bytes(out)
+
+
+def make_package(data: str, root: str) -> str:
+    """An unpacked package of Brother's, made up; returns Brother's folder in it."""
+    top = os.path.join(root, "nonexistent")  # BROTHER_DIR of the check build
+    for sub in ("inf/lut", "lpd", "profiles"):
+        os.makedirs(os.path.join(top, sub))
+    for name in os.listdir(data):
+        if name.endswith("_cache08.bin"):
+            shutil.copyfile(os.path.join(data, name), os.path.join(top, "inf/lut", name))
+    with open(os.path.join(top, "lpd/filter"), "wb") as f:
+        f.write(brother_tables())
+    for name in ("NM", "NM_IG_ON", "Fi", "Fi_IG_ON"):
+        with open(os.path.join(top, "profiles", f"broch08_PL_{name}.icm"), "wb") as f:
+            f.write(bytes(36) + b"acsp" + name.encode())
+    for at, dirs, files in os.walk(root):  # whatever the umask
+        os.chmod(at, 0o755)
+        for name in files:
+            os.chmod(os.path.join(at, name), 0o644)
+    return top
+
+
+def check_extract(data: str, td: str) -> None:
+    tile, capt = "0600-k_cache08.bin", "capt-k_cache08.bin"
+
+    def extract(change=None, args=("--unpacked",)):
+        case = tempfile.mkdtemp(dir=td, prefix="extract-")
+        root, dest = os.path.join(case, "package"), os.path.join(case, "data")
+        top = make_package(data, root)
+        if change:
+            change(case, root, top, dest)
+        env = {"HL3070CW_PACKAGE": root, "HL3070CW_DATA": dest, "PATH": "/usr/bin:/bin"}
+        res = subprocess.run([FILTER, "--extract-brother-data", *args], capture_output=True, env=env, check=False,
+                             timeout=30)
+        err = res.stderr.decode(errors="replace")
+        check("Sanitizer" not in err and res.returncode in (0, 1), f"extract: crash: {err[:300]}")
+        return res.returncode, err, case, top, dest
+
+    def linked(rel):
+        """Put a symlink, pointing back inside the package, in place of rel."""
+        def change(case, root, top, dest):
+            path = os.path.join(top, rel) if rel else top
+            os.rename(path, path + ".real")
+            os.symlink(os.path.basename(path) + ".real", path)
+        return change
+
+    rc, err, case, top, dest = extract()
+    check(rc == 0, f"extract: failed: {err[:300]}")
+    if rc:
+        return
+    names = [n for n in os.listdir(os.path.join(top, "inf/lut"))]
+    for name in names:
+        with open(os.path.join(top, "inf/lut", name), "rb") as a, open(os.path.join(dest, name), "rb") as b:
+            check(a.read() == b.read(), f"extract: {name} differs")
+        check(os.stat(os.path.join(dest, name)).st_mode & 0o777 == 0o644, f"extract: {name}: wrong mode")
+    made = os.listdir(dest)
+    check(len(made) == 16 + 12 + 1 and not any(n.startswith(".") for n in made), f"extract: unexpected files: {made}")
+    check(len(os.listdir(os.path.join(dest, "profiles"))) == 4, "extract: profiles missing")
+
+    def fifo(case, root, top, dest):
+        os.remove(os.path.join(top, "lpd/filter"))
+        os.mkfifo(os.path.join(top, "lpd/filter"))
+
+    def huge(case, root, top, dest):
+        os.truncate(os.path.join(top, "lpd/filter"), (64 << 20) + 1)
+
+    def other_kind(case, root, top, dest):
+        with open(os.path.join(top, "inf/lut", tile), "r+b") as f:
+            f.write(b"root:")
+
+    def package_link(case, root, top, dest):
+        os.rename(root, root + ".real")
+        os.symlink(root + ".real", root)
+
+    def dest_link(case, root, top, dest):
+        os.mkdir(os.path.join(case, "elsewhere"))
+        os.symlink(os.path.join(case, "elsewhere"), dest)
+
+    def profiles_link(case, root, top, dest):
+        os.mkdir(os.path.join(case, "elsewhere"))
+        os.mkdir(dest, 0o755)
+        os.symlink(os.path.join(case, "elsewhere"), os.path.join(dest, "profiles"))
+
+    refused = {
+        **{f"symlink for {rel or 'the top folder'}": linked(rel)
+           for rel in ("", "inf", "inf/lut", f"inf/lut/{tile}", "lpd", "lpd/filter", "profiles")},
+        "FIFO for a file": fifo, "file too large": huge, "another kind of file": other_kind,
+        "package folder a symlink": package_link, "data folder a symlink": dest_link,
+        "profiles folder a symlink": profiles_link,
+    }
+    for name, change in refused.items():
+        rc, err, case, top, dest = extract(change)
+        check(rc == 1 and err, f"extract, {name}: status {rc}, want it refused")
+        away = os.path.join(case, "elsewhere")
+        check(not os.path.exists(away) or not os.listdir(away), f"extract, {name}: wrote through the symlink")
+
+    def planted(case, root, top, dest):
+        os.mkdir(dest, 0o755)
+        with open(os.path.join(case, "victim"), "w") as f:
+            f.write("untouched")
+        os.symlink(os.path.join(case, "victim"), os.path.join(dest, tile))
+
+    rc, err, case, top, dest = extract(planted)
+    with open(os.path.join(case, "victim")) as f:
+        check(rc == 0 and f.read() == "untouched" and not os.path.islink(os.path.join(dest, tile)),
+              "extract: a symlink at a file's destination was followed")
+
+    rc, err, case, top, dest = extract(linked(f"inf/lut/{capt}"))
+    check(rc == 0 and "Fine" in err and not os.path.exists(os.path.join(dest, capt)), "extract: Fine file link followed")
+
+    for args in (("/tmp/data",), ("/tmp/data", "/"), ("--unpacked", "/"), ("",)):
+        rc, err, case, top, dest = extract(args=args)
+        check(rc == 1 and "Usage:" in err and not os.path.exists(dest), f"extract: took the arguments {args}")
+    print(f"OK   copying Brother's data: {len(refused)} kinds of trickery refused, no paths from the command line")
+
+    if os.geteuid() != 0:
+        return
+
+    def given_away(rel):
+        return lambda case, root, top, dest: os.chown(os.path.join(top, rel) if rel else root, 1234, 1234)
+
+    def opened_up(rel):
+        return lambda case, root, top, dest: os.chmod(os.path.join(top, rel) if rel else root, 0o777)
+
+    def loose_dest(case, root, top, dest):
+        os.mkdir(dest)
+        os.chmod(dest, 0o775)
+
+    parts = ("", "inf", "inf/lut", f"inf/lut/{tile}", "lpd", "lpd/filter")
+    unsafe = {
+        **{f"{rel or 'package folder'} of another user": given_away(rel) for rel in parts},
+        **{f"{rel or 'package folder'} writable by everyone": opened_up(rel) for rel in parts},
+        "data folder writable by its group": loose_dest,
+    }
+    for name, change in unsafe.items():
+        rc, err, case, top, dest = extract(change)
+        check(rc == 1 and "must belong to root" in err, f"extract as root, {name}: status {rc}, want it refused")
+    print(f"OK   as root: {len(unsafe)} unsafe owners and modes refused")
 
 
 def even(v: int) -> int:
@@ -596,6 +749,7 @@ def main() -> int:
         data = os.path.join(td, "data")
         make_data(data)
         check_usage()
+        check_extract(data, td)
         check_round_trips(data, td)
         check_all_sizes(data, td)
         check_grey_input(data, td)

@@ -68,7 +68,7 @@ main() {
     if [[ -f $BROTHER_FILTER && -d $BROTHER_LUT ]]; then
         have_brother=1
         log "Copying Brother's halftone patterns, colour tables and ICC profiles"
-        if ! run "${SUDO[@]+"${SUDO[@]}"}" "$DRIVER_DIR/rastertohl3070cw" --extract-brother-data "$DRIVER_DIR/data"; then
+        if ! run "${SUDO[@]+"${SUDO[@]}"}" "$DRIVER_DIR/rastertohl3070cw" --extract-brother-data; then
             warn "Copying Brother's data failed; the native driver will not work."
             have_brother=0
         fi

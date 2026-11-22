@@ -18,13 +18,9 @@
 #include "color.h"
 #include "fsutil.h"
 
-#include <errno.h>
-#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
 /* Weights in 1/4096 of a cell for in-cell positions 0..16, by how many of
  * the three channels lie between nodes (1, 2 or 3). */
@@ -64,38 +60,6 @@ int color_table_load(color_table *t, const char *path) {
   return ok ? 0 : -1;
 }
 
-/* Read a whole regular file of at most 64 MB (Brother's filter has 3 MB);
- * the installer does this as root, so a symlink is refused, not followed. */
-static uint8_t *read_file(const char *path, size_t *len) {
-  *len = 0;
-  int fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
-  if (fd < 0)
-    return NULL;
-  struct stat st;
-  if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size <= 0 || st.st_size > (64 << 20)) {
-    close(fd);
-    errno = EINVAL;
-    return NULL;
-  }
-  size_t n = (size_t)st.st_size, got = 0;
-  uint8_t *d = malloc(n);
-  while (d && got < n) {
-    ssize_t r = read(fd, d + got, n - got);
-    if (r < 0 && errno == EINTR)
-      continue;
-    if (r <= 0)
-      break;
-    got += (size_t)r;
-  }
-  close(fd);
-  if (!d || got != n) {
-    free(d);
-    return NULL;
-  }
-  *len = n;
-  return d;
-}
-
 /* Find "HL-30xxC <mode> ImpGray=<ON|OFF> Ver... <match>" followed by its zero
  * terminator; the table starts right after the zero. The last occurrence is
  * used (the x86_64 slice; both slices hold identical tables). */
@@ -123,7 +87,7 @@ static const uint8_t *find_table(const uint8_t *d, size_t len, const char *mode,
 int color_table_from_brother(color_table *t, const char *brother_filter, color_matching m, int improve_gray,
                              int fine) {
   size_t len;
-  uint8_t *d = read_file(brother_filter, &len);
+  uint8_t *d = fs_read_path(brother_filter, &len);
   if (!d)
     return -1;
   const uint8_t *p = find_table(d, len, fine ? "CAPT" : "600dpi", improve_gray, match_names[m]);
@@ -133,13 +97,11 @@ int color_table_from_brother(color_table *t, const char *brother_filter, color_m
   return p ? 0 : -1;
 }
 
-int color_tables_extract(const char *brother_filter, const char *dir) {
+int color_tables_extract(int from, const char *brother_filter, int dir) {
   size_t len;
-  uint8_t *d = read_file(brother_filter, &len);
-  if (!d) {
-    fprintf(stderr, "cannot read %s: %s\n", brother_filter, strerror(errno));
+  uint8_t *d = fs_read_file(from, brother_filter, &len);
+  if (!d)
     return -1;
-  }
   int written = 0;
   static const char *const modes[2] = {"600dpi", "CAPT"};
   for (int mode = 0; mode < 2; mode++)

@@ -26,7 +26,7 @@ main() {
 # Status 0: the native driver has its data.
 copy_brother_data() {
     if [[ -f $BROTHER_FILTER && -d $BROTHER_LUT ]]; then
-        if "$DRIVER_DIR/rastertohl3070cw" --extract-brother-data "$DRIVER_DIR/data"; then
+        if "$DRIVER_DIR/rastertohl3070cw" --extract-brother-data; then
             return 0
         fi
         echo "Copying Brother's data failed; removing the native PPD" >&2

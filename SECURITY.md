@@ -12,7 +12,9 @@ one, a file that shows the problem.
 - `rastertohl3070cw`, the CUPS filter. It runs for every print job and reads data that any user
   who can print may send, so crashes, memory errors, very large memory use or hangs caused by a
   print job count as security problems.
-- `rastertohl3070cw --extract-brother-data`, which the installer runs as root.
+- `rastertohl3070cw --extract-brother-data`, which the installers run as root. It must not read or
+  write outside Brother's driver folder and the driver's own, whatever is in Brother's package or
+  changes while it runs.
 - `install.sh`, `install-linux.sh`, `uninstall.sh` and the installer package, which run with
   administrator rights.
 

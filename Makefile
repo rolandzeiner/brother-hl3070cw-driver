@@ -7,9 +7,10 @@
 #   make check      sanitizer build on made-up data: needs nothing of Brother's
 #   make lint       static analysis of the C code, the scripts and the PPDs
 #   make oracle-test  the same as test, live against Brother's filter (needs Rosetta)
-#   make pkg        installer package in build/pkg/
+#   make pkg        macOS: installer package in build/pkg/
+#   make dist       Linux: release package for this processor in build/dist/
 
-VERSION  ?= 0.4.1
+VERSION  ?= 0.5.0
 OS       := $(shell uname -s)
 # -ffp-contract=off: no fused multiply-add, so the grey conversion rounds
 # exactly like Brother's filter (see src/halftone.c).
@@ -23,7 +24,7 @@ ifeq ($(OS),Darwin)
 ARCHS    ?= -arch arm64 -arch x86_64
 PLATFORM := -mmacosx-version-min=11.0
 else
-# Linux: POSIX and X/Open names (realpath) from the C library, and Debian's own hardening (fortified
+# Linux: POSIX.1-2008 names (openat, O_NOFOLLOW) from the C library, and Debian's own hardening (fortified
 # libc calls, a position-independent executable, read-only relocations)
 ARCHS    ?=
 PLATFORM := -D_XOPEN_SOURCE=700
@@ -57,7 +58,8 @@ endif
 # address space); there: make check SANITIZE=undefined. CI runs both.
 SANITIZE    ?= address,undefined
 CHECK_FLAGS := -O1 -g -fsanitize=$(SANITIZE) -fno-sanitize-recover=all -fno-omit-frame-pointer $(BASE) \
-               -DBROTHER_LUT_DIR='"/nonexistent/"' -DBROTHER_FILTER='"/nonexistent/filter"' -DHL3070CW_TEST_HOOKS
+               -DBROTHER_DIR='"/nonexistent"' -DBROTHER_LUT='"inf/lut"' -DBROTHER_FILTER='"lpd/filter"' \
+               -DBROTHER_PROFILES='"profiles"' -DHL3070CW_TEST_HOOKS
 
 build/check/rastertohl3070cw: $(SRC) $(HDR)
 	@mkdir -p build/check
@@ -74,7 +76,8 @@ check: build/check/rastertohl3070cw build/check/fine_lines
 # tools; without it, the analyzer built into Apple's clang runs alone.
 TIDY     ?= $(firstword $(shell command -v clang-tidy) $(wildcard /opt/homebrew/opt/llvm/bin/clang-tidy) \
             $(wildcard /usr/local/opt/llvm/bin/clang-tidy))
-SCRIPTS  := install.sh install-linux.sh uninstall.sh packaging/postinstall
+SCRIPTS  := install.sh install-linux.sh uninstall.sh packaging/postinstall docker/entrypoint.sh \
+            docker/web/patch-templates.sh tests/linux-package.sh tests/macos-package.sh
 
 lint:
 ifneq ($(TIDY),)
@@ -133,8 +136,28 @@ $(PKG): $(BIN) LICENSE Makefile ppd/hl3070cw-native.ppd ppd/hl3070cw-postscript.
 	  --package-path build/pkg --version $(VERSION) $(PKG)
 	rm build/pkg/driver.pkg
 
+# Linux release package: the filter, both PPDs and the installer. Built on
+# Debian 12, so it also runs on newer distributions (CI does, and tests it).
+DIST_ARCH := $(subst aarch64,arm64,$(shell uname -m))
+DIST_NAME := HL3070CW-Driver-$(VERSION)-linux-$(DIST_ARCH)
+
+dist: $(BIN)
+ifneq ($(OS),Linux)
+	@echo "make dist builds the Linux package: run it on Linux (macOS: make pkg)" >&2; exit 2
+else
+	rm -rf build/dist
+	mkdir -p build/dist/$(DIST_NAME)/ppd/linux
+	install -m 755 $(BIN) install-linux.sh build/dist/$(DIST_NAME)/
+	install -m 644 LICENSE README.md SECURITY.md build/dist/$(DIST_NAME)/
+	install -m 644 ppd/hl3070cw-postscript.ppd build/dist/$(DIST_NAME)/ppd/
+	install -m 644 ppd/linux/hl3070cw-native.ppd build/dist/$(DIST_NAME)/ppd/linux/
+	tar -C build/dist --sort=name --owner=0 --group=0 --numeric-owner --mode=go-w \
+	  -czf build/dist/$(DIST_NAME).tar.gz $(DIST_NAME)
+	rm -rf build/dist/$(DIST_NAME)
+endif
+
 clean:
 	chmod -R u+w build/pkgroot 2>/dev/null || true
 	rm -rf build
 
-.PHONY: all test check lint oracle-test fixtures pkg clean
+.PHONY: all test check lint oracle-test fixtures pkg dist clean

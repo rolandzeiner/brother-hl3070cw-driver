@@ -25,12 +25,13 @@ readonly FILTER_DIR=/usr/lib/cups/filter
 readonly PPD_DIR=/usr/share/ppd/hl3070cw
 readonly SHARE_DIR=/usr/share/hl3070cw-native
 readonly DATA_DIR=$SHARE_DIR/data
+readonly UNPACK_DIR=$SHARE_DIR/unpack # where the filter looks for a package (--unpacked)
 readonly QUEUE_PPDS=/etc/cups/ppd
 readonly BROTHER_INSTALLED=/opt/brother/Printers/hl3070cw
 readonly NATIVE_NICK="Brother HL-3070CW, native driver (open source)"
 readonly PS_NICK="Brother HL-3070CW, PostScript (BR-Script 3)"
 
-TMP_DIR='' # set in copy_brother_data, removed by on_exit
+UNPACKING=0 # set in copy_brother_data: on_exit removes UNPACK_DIR
 
 main() {
     DRY_RUN=0
@@ -69,7 +70,11 @@ main() {
     for f in "$bin" "$(dirname -- "$bin")" "$native_ppd" "$ps_ppd" "$src_dir/ppd" "$src_dir/ppd/linux"; do
         check_source "$f"
     done
-    log "Filter: $("$bin" --version 2>/dev/null || printf 'unknown version')"
+    local version
+    if ! version=$("$bin" --version 2>&1); then
+        die "the driver does not run on this computer ($(uname -m); it needs CUPS, and the package for this processor): $version"
+    fi
+    log "Filter: $version"
 
     log "Installing the filter into $FILTER_DIR"
     run install -d -m 755 "$FILTER_DIR" "$PPD_DIR" "$SHARE_DIR"
@@ -113,22 +118,32 @@ copy_brother_data() {
     if [[ -n $PACKAGE ]]; then
         log "Unpacking Brother's driver package $PACKAGE (its programs are not run)"
         if ((DRY_RUN)); then
-            run "$filter" --extract-brother-data "$DATA_DIR" "<unpacked package>"
+            run "$filter" --extract-brother-data --unpacked
             return 0
         fi
-        TMP_DIR=$(mktemp -d) || die "cannot create a temporary folder"
+        # The package is not trusted. It is unpacked inside a folder only root
+        # can enter, and without its owners and modes: its entry for "." could
+        # otherwise open that folder to everybody.
+        local dest=$UNPACK_DIR/package
+        UNPACKING=1
+        rm -rf -- "${UNPACK_DIR:?}" || die "cannot remove $UNPACK_DIR"
+        mkdir -m 700 -- "$UNPACK_DIR" || die "cannot create $UNPACK_DIR"
+        mkdir -m 755 -- "$dest" || die "cannot create $dest"
         case "$PACKAGE" in
         *.rpm)
             command -v bsdtar >/dev/null || die "unpacking an .rpm needs bsdtar (Debian, Raspberry Pi OS: sudo apt install libarchive-tools)"
-            bsdtar -xf "$PACKAGE" -C "$TMP_DIR" || die "cannot unpack $PACKAGE"
+            (umask 022 && bsdtar --no-same-owner --no-same-permissions -xf "$PACKAGE" -C "$dest") ||
+                die "cannot unpack $PACKAGE"
             ;;
         *.deb)
-            dpkg-deb -x "$PACKAGE" "$TMP_DIR" || die "cannot unpack $PACKAGE"
+            command -v dpkg-deb >/dev/null || die "unpacking a .deb needs dpkg-deb; use Brother's .rpm instead"
+            (umask 022 && dpkg-deb --fsys-tarfile "$PACKAGE" |
+                tar --no-same-owner --no-same-permissions -xf - -C "$dest") || die "cannot unpack $PACKAGE"
             ;;
         *) die "$PACKAGE is neither an .rpm nor a .deb" ;;
         esac
-        [[ -d $TMP_DIR$BROTHER_INSTALLED ]] || die "$PACKAGE is not Brother's HL-3070CW driver (hl3070cwlpr)"
-        if "$filter" --extract-brother-data "$DATA_DIR" "$TMP_DIR"; then
+        [[ -d $dest$BROTHER_INSTALLED ]] || die "$PACKAGE is not Brother's HL-3070CW driver (hl3070cwlpr)"
+        if "$filter" --extract-brother-data --unpacked; then
             return 0
         fi
         warn "Copying Brother's data failed; the native driver will not work."
@@ -136,7 +151,7 @@ copy_brother_data() {
     fi
     if [[ -d $BROTHER_INSTALLED ]]; then
         log "Copying Brother's data from its installed driver"
-        if run "$filter" --extract-brother-data "$DATA_DIR"; then
+        if run "$filter" --extract-brother-data; then
             return 0
         fi
         warn "Copying Brother's data failed; the native driver will not work."
@@ -316,8 +331,8 @@ run() {
 on_exit() {
     local status=$?
     set +e
-    if [[ -n $TMP_DIR && -d $TMP_DIR ]]; then
-        rm -rf -- "${TMP_DIR:?}"
+    if ((UNPACKING)); then
+        rm -rf -- "${UNPACK_DIR:?}"
     fi
     exit "$status"
 }

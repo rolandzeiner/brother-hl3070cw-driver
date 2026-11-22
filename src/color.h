@@ -31,8 +31,10 @@ int color_table_load(color_table *t, const char *path);
 int color_table_from_brother(color_table *t, const char *brother_filter, color_matching m, int improve_gray,
                              int fine);
 
-/* Write all twelve tables (600 dpi and CAPT) from Brother's filter binary into dir. */
-int color_tables_extract(const char *brother_filter, const char *dir);
+/* Write all twelve tables (600 dpi and CAPT) from Brother's filter binary,
+ * brother_filter below the folder from, into the folder dir (descriptors:
+ * see fsutil.h). */
+int color_tables_extract(int from, const char *brother_filter, int dir);
 
 /* Toner levels 0..255 for one RGB colour: out[0..3] = K, C, M, Y. */
 void color_convert(const color_table *t, const uint8_t rgb[3], uint8_t out[4]);

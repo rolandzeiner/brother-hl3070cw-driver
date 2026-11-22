@@ -2,7 +2,7 @@
  * rastertohl3070cw: CUPS filter for the Brother HL-3070CW.
  *
  *   rastertohl3070cw job-id user title copies options [file]
- *   rastertohl3070cw --extract-brother-data DIR [ROOT]
+ *   rastertohl3070cw --extract-brother-data [--unpacked]
  *   rastertohl3070cw --version
  *
  * Reads CUPS raster (RGB or grey, 8 bits per channel, 600 dpi) and writes
@@ -36,7 +36,6 @@
 #include <cups/raster.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <limits.h>
 #include <math.h>
 #include <signal.h>
 #include <stdint.h>
@@ -56,27 +55,35 @@
 #define DRIVER_VERSION "dev" /* the Makefile sets the real one */
 #endif
 
-/* Where this driver keeps its copy of Brother's data, and where Brother's
- * own driver package puts the originals: its macOS driver, or on Linux its
- * LPR driver for the HL-3070CW (the colour tables are inside its filter
- * program, as on macOS). Only the macOS driver has ICC profiles; macOS's
- * colour matching uses them before this filter. */
+/* Where this driver keeps its copy of Brother's data, where its installer
+ * unpacks a package of Brother's, and where that package puts the originals:
+ * Brother's macOS driver, or on Linux its LPR driver for the HL-3070CW (the
+ * colour tables are inside its filter program, as on macOS). Only the macOS
+ * driver has ICC profiles; macOS's colour matching uses them before this
+ * filter.
+ *
+ * These paths are fixed. The step that runs as root takes none from its
+ * command line. (The self-test build has its own, see the Makefile.) */
 #ifdef __APPLE__
-#ifndef DRIVER_DATA_DIR
-#define DRIVER_DATA_DIR "/Library/Printers/HL3070CW-Native/data"
+#define DRIVER_DIR "/Library/Printers/HL3070CW-Native"
+#ifndef BROTHER_DIR
+#define BROTHER_DIR "/Library/Printers/Brother"
+#define BROTHER_LUT "Brother LUT"
+#define BROTHER_FILTER "Filter/rastertobrother3040.bundle/Contents/MacOS/rastertobrother3040"
+#define BROTHER_PROFILES "Profiles"
 #endif
-#ifndef BROTHER_FILTER
-#define BROTHER_FILTER "/Library/Printers/Brother/Filter/rastertobrother3040.bundle/Contents/MacOS/rastertobrother3040"
-#endif
-#define BROTHER_PROFILES_DIR "/Library/Printers/Brother/Profiles"
 #else
-#ifndef DRIVER_DATA_DIR
-#define DRIVER_DATA_DIR "/usr/share/hl3070cw-native/data"
+#define DRIVER_DIR "/usr/share/hl3070cw-native"
+#ifndef BROTHER_DIR
+#define BROTHER_DIR "/opt/brother/Printers/hl3070cw"
+#define BROTHER_LUT "inf/lut"
+#define BROTHER_FILTER "lpd/brhl3070cwfilter"
 #endif
-#ifndef BROTHER_FILTER
-#define BROTHER_FILTER "/opt/brother/Printers/hl3070cw/lpd/brhl3070cwfilter"
 #endif
-#endif
+#define DRIVER_DATA_DIR DRIVER_DIR "/data"
+/* inside a folder only root can enter: see install-linux.sh */
+#define DRIVER_PACKAGE_DIR DRIVER_DIR "/unpack/package"
+#define BROTHER_FILTER_PATH BROTHER_DIR "/" BROTHER_FILTER
 
 /* The largest page the printer takes, in pixels at 600 dpi with no margins
  * taken off: 624 pt wide (DL Long Edge, the widest size) and 1152 pt long
@@ -237,6 +244,15 @@ static const char *data_dir(void) {
   return DRIVER_DATA_DIR;
 }
 
+static const char *package_dir(void) {
+#ifdef HL3070CW_TEST_HOOKS
+  const char *d = getenv("HL3070CW_PACKAGE");
+  if (d && *d)
+    return d;
+#endif
+  return DRIVER_PACKAGE_DIR;
+}
+
 /* snprintf into a buffer, failing instead of silently cutting the path */
 static int path_join(char *buf, size_t cap, const char *dir, const char *sep, const char *name) {
   int n = snprintf(buf, cap, "%s%s%s", dir, sep, name);
@@ -253,7 +269,7 @@ static int tile_path(char *path, size_t cap, char plane, int toner_save, int fin
   snprintf(name, sizeof name, "%s-%c%s_cache08.bin", fine ? "capt" : "0600", plane, toner_save ? "-TS" : "");
   if (path_join(path, cap, data_dir(), "/", name))
     return -1;
-  if (access(path, R_OK) != 0 && path_join(path, cap, BROTHER_LUT_DIR, "", name))
+  if (access(path, R_OK) != 0 && path_join(path, cap, BROTHER_DIR "/" BROTHER_LUT, "/", name))
     return -1;
   return 0;
 }
@@ -280,7 +296,7 @@ static int load_table(color_table *t, int matching, int improve_gray, int fine) 
     return 0;
   if (access(path, F_OK) == 0)
     fprintf(stderr, "WARNING: %s is damaged, reading the table from Brother's driver instead\n", path);
-  if (color_table_from_brother(t, BROTHER_FILTER, (color_matching)matching, improve_gray, fine) == 0)
+  if (color_table_from_brother(t, BROTHER_FILTER_PATH, (color_matching)matching, improve_gray, fine) == 0)
     return 0;
   fprintf(stderr, "ERROR: Brother's colour tables not found (in %s or Brother's driver). "
                   "Install Brother's HL-3070CW driver, or use the PostScript version of this driver\n",
@@ -301,77 +317,83 @@ static int have_fine_data(int toner_save, int colour, int matching, int improve_
     return 1;
   if (path_join(path, sizeof path, data_dir(), "/", color_table_file((color_matching)matching, improve_gray, 1)))
     return 0;
-  return access(path, R_OK) == 0 || access(BROTHER_FILTER, R_OK) == 0;
+  return access(path, R_OK) == 0 || access(BROTHER_FILTER_PATH, R_OK) == 0;
 }
 
-/* root + path of one of Brother's files, refused unless it really lies inside
- * root: a symlink in an unpacked package must not lead elsewhere. */
-static int brother_path(char *buf, size_t cap, const char *root, const char *path, const char *name) {
-  char joined[1024], real[PATH_MAX], real_root[PATH_MAX];
-  if (path_join(joined, sizeof joined, root, path, name))
+/* The folder of Brother's driver: the installed one, or the same folder in
+ * the package the installer unpacked. A package's content is not trusted:
+ * below the package folder no symlink is followed, not even one that points
+ * back inside it. */
+static int open_brother_dir(int unpacked) {
+  if (!unpacked)
+    return fs_open_dir(BROTHER_DIR);
+  int package = fs_open_dir(package_dir());
+  if (package < 0)
     return -1;
-  if (!*root) { /* Brother's installed driver */
-    snprintf(buf, cap, "%s", joined);
-    return 0;
-  }
-  if (!realpath(root, real_root) || !realpath(joined, real)) {
-    fprintf(stderr, "cannot find %s: %s\n", joined, strerror(errno));
-    return -1;
-  }
-  size_t n = strlen(real_root);
-  if (strncmp(real, real_root, n) != 0 || (real[n] != '/' && strcmp(real_root, "/") != 0)) {
-    fprintf(stderr, "%s leads outside %s; refusing it\n", joined, root);
-    return -1;
-  }
-  return path_join(buf, cap, real, "", "");
+  int fd = fs_open_dir_beneath(package, &BROTHER_DIR[1]); /* without the leading slash */
+  close(package);
+  return fd;
 }
 
-/* Copy what the driver needs out of Brother's driver package: the installed
- * one, or one unpacked under root (Linux: Brother's LPR driver package).
- * Runs as root from the installer: see src/fsutil.c for the safeguards. */
-static int extract_brother_data(const char *dir, const char *root) {
-  umask(022); /* the files must stay readable for CUPS (lp) */
-  char path[1024];
-  if (fs_prepare_dir(dir))
-    return 1;
+/* Copy what the driver needs from the folder from into the folder to. */
+static int copy_brother_files(int from, int to) {
   /* The 600 dpi files are needed; without the Fine ones the driver still
    * works and prints Fine jobs in Normal quality. */
   int failed = 0, fine_missing = 0;
+  char path[1024];
   static const char planes[] = "kcmy";
   for (int fine = 0; fine < 2; fine++)
     for (int p = 0; p < 4; p++)
       for (int ts = 0; ts < 2; ts++) {
         char name[64];
         snprintf(name, sizeof name, "%s-%c%s_cache08.bin", fine ? "capt" : "0600", planes[p], ts ? "-TS" : "");
-        if (brother_path(path, sizeof path, root, BROTHER_LUT_DIR, name) || fs_copy_file(path, dir, name, "BRCD", 0)) {
+        if (path_join(path, sizeof path, BROTHER_LUT, "/", name) || fs_copy_file(from, path, to, name, "BRCD", 0)) {
           if (fine)
             fine_missing = 1;
           else
             failed = 1;
         }
       }
-  if (brother_path(path, sizeof path, root, BROTHER_FILTER, "") || color_tables_extract(path, dir))
+  if (color_tables_extract(from, BROTHER_FILTER, to))
     failed = 1;
-#ifdef BROTHER_PROFILES_DIR
+#ifdef BROTHER_PROFILES
   /* ICC profiles for macOS's colour matching (named in the PPD): Normal, then Fine */
-  char sub[1024];
-  if (path_join(sub, sizeof sub, dir, "/", "profiles") || fs_prepare_dir(sub))
+  int sub = fs_make_dir(to, "profiles");
+  if (sub < 0)
     return 1;
   static const char *const profiles[] = {"broch08_PL_NM.icm", "broch08_PL_NM_IG_ON.icm", "broch08_PL_Fi.icm",
                                          "broch08_PL_Fi_IG_ON.icm"};
   for (size_t i = 0; i < sizeof profiles / sizeof profiles[0]; i++)
-    if (brother_path(path, sizeof path, root, BROTHER_PROFILES_DIR "/", profiles[i]) ||
-        fs_copy_file(path, sub, profiles[i], "acsp", 36)) { /* the ICC profile signature */
+    if (path_join(path, sizeof path, BROTHER_PROFILES, "/", profiles[i]) ||
+        fs_copy_file(from, path, sub, profiles[i], "acsp", 36)) { /* the ICC profile signature */
       if (i >= 2)
         fine_missing = 1;
       else
         failed = 1;
     }
+  close(sub);
 #endif
-  if (!failed)
-    printf("Brother's data copied to %s\n", dir);
   if (!failed && fine_missing)
     fputs("Some files for Fine quality were not found; Fine will print in Normal quality\n", stderr);
+  return failed;
+}
+
+/* Runs as root from the installers: see src/fsutil.h for the safeguards. */
+static int extract_brother_data(int unpacked) {
+  umask(022); /* the files must stay readable for CUPS (lp) */
+  int from = open_brother_dir(unpacked);
+  if (from < 0)
+    return 1;
+  int to = fs_make_dir(AT_FDCWD, data_dir());
+  if (to < 0) {
+    close(from);
+    return 1;
+  }
+  int failed = copy_brother_files(from, to);
+  close(from);
+  close(to);
+  if (!failed)
+    printf("Brother's data copied to %s\n", data_dir());
   return failed;
 }
 
@@ -402,11 +424,17 @@ int main(int argc, char *argv[]) {
     printf("rastertohl3070cw %s\n", DRIVER_VERSION);
     return 0;
   }
-  if ((argc == 3 || argc == 4) && !strcmp(argv[1], "--extract-brother-data"))
-    return extract_brother_data(argv[2], argc == 4 ? argv[3] : "");
+  if (argc >= 2 && !strcmp(argv[1], "--extract-brother-data")) {
+    if (argc == 2)
+      return extract_brother_data(0);
+    if (argc == 3 && !strcmp(argv[2], "--unpacked"))
+      return extract_brother_data(1);
+    fputs("Usage: rastertohl3070cw --extract-brother-data [--unpacked]\n", stderr);
+    return 1;
+  }
   if (argc < 6 || argc > 7) {
     fputs("Usage: rastertohl3070cw job-id user title copies options [file]\n"
-          "       rastertohl3070cw --extract-brother-data DIR [ROOT]\n",
+          "       rastertohl3070cw --extract-brother-data [--unpacked]\n",
           stderr);
     return 1;
   }
@@ -454,6 +482,7 @@ int main(int argc, char *argv[]) {
   uint8_t *in = NULL, *conv = NULL, *bits[4] = {NULL, NULL, NULL, NULL};
   int page = 0, started = 0, colour = 0;
   job_options o;
+  memset(&o, 0, sizeof o);
 
   while (!status && !g_cancelled && cupsRasterReadHeader2(ras, &h)) {
     if (g_cancelled) /* while waiting for the header */
