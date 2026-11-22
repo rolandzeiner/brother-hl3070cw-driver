@@ -20,6 +20,10 @@ PAGE_SIZES = {
     "Postcard": (284, 419), "EnvYou4": (298, 666), "EnvChou3": (340, 666),
 }
 
+# Custom paper (points), as the page header carries it: 100 x 250 mm and the ends of Brother's range.
+CUSTOM_SIZES = {"Custom.283x708": (283, 708), "Custom.198x329": (198, 329), "Custom.612x1152": (612, 1152)}
+ALL_SIZES = {**PAGE_SIZES, **CUSTOM_SIZES}
+
 # Header fields the Brother PPD sets through setpagedevice: name -> (offset, kind)
 FIELDS = {
     "MediaType": (128, "str"),
@@ -38,7 +42,7 @@ RowSource = Callable[[int, int, int], Row]  # (y, width, height) -> RGB row byte
 
 def page_geometry(size: str, dpi: int = 600) -> tuple[int, int]:
     """Pixel width and height of the imageable area, as cgpdftoraster produces it."""
-    w_pt, h_pt = PAGE_SIZES[size]
+    w_pt, h_pt = ALL_SIZES[size]
     width = round((w_pt - 2 * MARGIN_PT) * dpi / 72)
     height = round((h_pt - 2 * MARGIN_PT) * dpi / 72)
     return width, height
@@ -46,7 +50,7 @@ def page_geometry(size: str, dpi: int = 600) -> tuple[int, int]:
 
 def header(size: str, dpi: int = 600, ydpi: int | None = None, fields: dict | None = None) -> bytes:
     ydpi = ydpi or dpi
-    w_pt, h_pt = PAGE_SIZES[size]
+    w_pt, h_pt = ALL_SIZES[size]
     width = round((w_pt - 2 * MARGIN_PT) * dpi / 72)
     height = round((h_pt - 2 * MARGIN_PT) * ydpi / 72)
     h = bytearray(1796)

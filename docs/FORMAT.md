@@ -127,6 +127,16 @@ colour jobs. Planes are K, C, M, Y. Brother sends `0x020c, 0x0214, 0x040a,
 10-pixel units for M). These unit widths look like the halftone cell widths,
 so that halftoned areas compress as repeats.
 
+### Custom paper
+
+A paper that is not one of the printer's sizes goes as `CustomMediaSize` in
+tenths of a millimetre (`CustomMediaSizeUnits` 2). Brother's filter takes the
+header's integer `PageSize` (points) and truncates twice: down to whole 1/120
+inch, then down to whole tenths, `floor(floor(pt * 120 / 72) * 254 / 120)`
+(all 685 values measured between 198 and 1152 pt). 100 x 250 mm, 283 x 708 pt,
+goes as 996 x 2497. The range is the one of Brother's PPD: 198-612 x 328-1152
+pt.
+
 ## 2. Bands
 
 One ReadImage carries one band of one plane:
@@ -354,13 +364,13 @@ The remaining differences are in this choice, never in what is printed;
 
 ## Verification
 
-* `make test` compares the filter with checksums of 62 outputs of Brother's
+* `make test` compares the filter with checksums of 65 outputs of Brother's
   filter (`tests/fixtures.sha256`; inputs are regenerated from fixed seeds):
   dots, random black/white pages on A6 and A4, all 256 greys, 1500 random
   colours in Mono, Toner Save, Improve Output, manual feed, media types, all
   22 paper sizes, multi-page jobs, title and user, and in colour: table-edge
   colours in every colour option, greys and black content; Secure Print and
-  Enhance Black; and twelve Fine jobs in Mono and colour. Fine checksums cover what is printed (the job without
+  Enhance Black; three custom paper sizes; and twelve Fine jobs in Mono and colour. Fine checksums cover what is printed (the job without
   its band encoding, plus every decoded row, `tools/fineimage.py`), the others
   the bytes. Works without Rosetta. The outputs themselves contain Brother's
   halftone patterns and are not in the repository; `make fixtures` keeps them

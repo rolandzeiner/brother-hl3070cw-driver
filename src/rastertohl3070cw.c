@@ -153,6 +153,10 @@ static const size_entry sizes[] = {
 
 static unsigned absdiff(unsigned a, unsigned b) { return a > b ? a - b : b - a; }
 
+/* Points to tenths of a millimetre as Brother's filter counts them: down to
+ * whole 1/120 inch, then down to whole tenths. */
+static unsigned custom_tenths(unsigned points) { return points * 120 / 72 * 254 / 120; }
+
 /* The paper for a page of w x h points: one of the printer's sizes, or a
  * custom size in its range. -1 for anything else. */
 static int media_size_for(unsigned w, unsigned h, xl_media_size *out) {
@@ -163,8 +167,7 @@ static int media_size_for(unsigned w, unsigned h, xl_media_size *out) {
     }
   if (w < CUSTOM_MIN_WIDTH || w > CUSTOM_MAX_WIDTH || h < CUSTOM_MIN_HEIGHT || h > CUSTOM_MAX_HEIGHT)
     return -1;
-  xl_media_size s = {XL_SIZE_CUSTOM, 0, NULL, (unsigned)lround(w * 254.0 / 72.0),
-                     (unsigned)lround(h * 254.0 / 72.0)};
+  xl_media_size s = {XL_SIZE_CUSTOM, 0, NULL, custom_tenths(w), custom_tenths(h)};
   *out = s;
   return 0;
 }

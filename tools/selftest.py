@@ -345,7 +345,7 @@ def check_custom_sizes(data: str) -> None:
         if rc:
             continue
         page = next(op for op in pxl.parse(out).ops if op.name == "BeginPage")
-        want = tuple(int(v * 254 / 72 + 0.5) for v in size)
+        want = tuple(v * 120 // 72 * 254 // 120 for v in size)  # as Brother's filter rounds
         check(page.attrs.get("CustomMediaSize") == want, f"custom paper {size}: sent as {page.attrs}")
     print("OK   custom paper sizes in the printer's range print")
 
