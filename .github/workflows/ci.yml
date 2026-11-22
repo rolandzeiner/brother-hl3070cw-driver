@@ -125,11 +125,33 @@ jobs:
           path: build/dist/*.tar.gz
           if-no-files-found: error
 
+  print-server:
+    name: Print server, access rules
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      COMPOSE_FILE: tests/print-server/compose.yaml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the image
+        run: docker compose build server
+      - name: Start it
+        run: docker compose up -d server open
+      - name: Clients, the proxy and everyone else
+        run: docker compose run --rm clients
+      - name: A process on the server's machine
+        run: docker compose run --rm host
+      - name: The server's log
+        if: failure()
+        run: docker compose logs server open
+
   attest:
     name: Attest the release files
     # main's builds are the ones releases are made of
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [check, linux-package]
+    needs: [check, linux-package, print-server]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
