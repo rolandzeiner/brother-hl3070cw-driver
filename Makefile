@@ -89,8 +89,7 @@ endif
 	shellcheck $(SCRIPTS)
 	for s in $(SCRIPTS); do /bin/bash -n $$s || exit 1; done
 	# filters, profiles: the PPD names files of an installed driver, which a build machine has not got
-	cupstestppd -W filters -W profiles -W translations ppd/hl3070cw-native.ppd ppd/hl3070cw-postscript.ppd \
-	  ppd/linux/hl3070cw-native.ppd
+	cupstestppd -q -W filters -W profiles ppd/*.ppd ppd/linux/*.ppd ppd/siblings/*.ppd ppd/linux/siblings/*.ppd
 	python3 -I tools/genppd.py --check
 	python3 -I -m compileall -q tools
 

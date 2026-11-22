@@ -22,7 +22,7 @@
 *TTRasterizer: Type42
 *cupsVersion: 2.3
 *cupsManualCopies: True
-*cupsLanguages: "en"
+*cupsLanguages: "en de"
 *cupsFilter: "application/vnd.cups-raster 0 /Library/Printers/HL3070CW-Native/rastertohl3070cw"
 *% Secure Print: the print dialog's "Print with PIN", a PIN of 4 digits
 *cupsJobPassword: "1111"
@@ -146,6 +146,20 @@
 *PaperDimension EnvYou4/Envelope #4: "298 666"
 *PaperDimension EnvChou3/Envelope MAX: "340 666"
 
+*VariablePaperSize: True
+*LeadingEdge Short: ""
+*DefaultLeadingEdge: Short
+*MaxMediaWidth: "612"
+*MaxMediaHeight: "1152"
+*HWMargins: 12 12 12 12
+*NonUIOrderDependency: 10 AnySetup *CustomPageSize
+*CustomPageSize True: "pop pop pop <</PageSize[5 -2 roll]/ImagingBBox null>>setpagedevice"
+*ParamCustomPageSize Width: 1 points 198 612
+*ParamCustomPageSize Height: 2 points 328.32 1152
+*ParamCustomPageSize WidthOffset: 3 points 0 0
+*ParamCustomPageSize HeightOffset: 4 points 0 0
+*ParamCustomPageSize Orientation: 5 int 0 3
+
 *OpenUI *InputSlot/Paper Source: PickOne
 *OrderDependency: 20 AnySetup *InputSlot
 *DefaultInputSlot: Tray1
@@ -213,6 +227,99 @@
 *BRImproveOutput BRLessPaperCurl/Reduce Paper Curl: "<</cupsInteger2 1>>setpagedevice"
 *BRImproveOutput BRFixIntensity/Improve Toner Fixing: "<</cupsInteger2 2>>setpagedevice"
 *CloseUI: *BRImproveOutput
+
+*% German
+*de.Translation BRResolution/Druckqualität: ""
+*de.BRResolution 600dpi/Normal (600 x 600 dpi): ""
+*de.BRResolution 600x2400dpi/Fein (2400-dpi-Klasse): ""
+*de.Translation PageSize/Papierformat: ""
+*de.PageSize A4/A4: ""
+*de.PageSize Letter/Letter: ""
+*de.PageSize Legal/Legal: ""
+*de.PageSize Executive/Executive: ""
+*de.PageSize A5/A5: ""
+*de.PageSize A5Rotated/A5 lange Kante: ""
+*de.PageSize A6/A6: ""
+*de.PageSize ISOB5/B5 (ISO): ""
+*de.PageSize ISOB6/B6 (ISO): ""
+*de.PageSize B5/B5 (JIS): ""
+*de.PageSize B6/B6 (JIS): ""
+*de.PageSize EnvDL/DL-Umschlag: ""
+*de.PageSize EnvC5/C5-Umschlag: ""
+*de.PageSize Env10/Com-10-Umschlag: ""
+*de.PageSize EnvMonarch/Monarch-Umschlag: ""
+*de.PageSize 3x5/3 x 5: ""
+*de.PageSize 210x405mm/A4 lang: ""
+*de.PageSize FanFoldGermanLegal/Folio: ""
+*de.PageSize EnvPRC5Rotated/DL lange Kante: ""
+*de.PageSize Postcard/Hagaki: ""
+*de.PageSize EnvYou4/Umschlag Nr. 4: ""
+*de.PageSize EnvChou3/Umschlag MAX: ""
+*de.Translation PageRegion/Papierformat: ""
+*de.PageRegion A4/A4: ""
+*de.PageRegion Letter/Letter: ""
+*de.PageRegion Legal/Legal: ""
+*de.PageRegion Executive/Executive: ""
+*de.PageRegion A5/A5: ""
+*de.PageRegion A5Rotated/A5 lange Kante: ""
+*de.PageRegion A6/A6: ""
+*de.PageRegion ISOB5/B5 (ISO): ""
+*de.PageRegion ISOB6/B6 (ISO): ""
+*de.PageRegion B5/B5 (JIS): ""
+*de.PageRegion B6/B6 (JIS): ""
+*de.PageRegion EnvDL/DL-Umschlag: ""
+*de.PageRegion EnvC5/C5-Umschlag: ""
+*de.PageRegion Env10/Com-10-Umschlag: ""
+*de.PageRegion EnvMonarch/Monarch-Umschlag: ""
+*de.PageRegion 3x5/3 x 5: ""
+*de.PageRegion 210x405mm/A4 lang: ""
+*de.PageRegion FanFoldGermanLegal/Folio: ""
+*de.PageRegion EnvPRC5Rotated/DL lange Kante: ""
+*de.PageRegion Postcard/Hagaki: ""
+*de.PageRegion EnvYou4/Umschlag Nr. 4: ""
+*de.PageRegion EnvChou3/Umschlag MAX: ""
+*de.Translation InputSlot/Papierquelle: ""
+*de.InputSlot Tray1/Kassette 1: ""
+*de.InputSlot Manual/Manuelle Zufuhr: ""
+*de.Translation MediaType/Druckmedium: ""
+*de.MediaType Plain/Normalpapier: ""
+*de.MediaType Thin/Dünnes Papier: ""
+*de.MediaType Thick/Dickes Papier: ""
+*de.MediaType Thicker/Dickeres Papier: ""
+*de.MediaType BOND/Briefpapier: ""
+*de.MediaType Env/Umschläge: ""
+*de.MediaType EnvThick/Umschläge, dick: ""
+*de.MediaType EnvThin/Umschläge, dünn: ""
+*de.MediaType Recycled/Recyclingpapier: ""
+*de.MediaType Label/Etiketten: ""
+*de.MediaType PostCard/Postkarte: ""
+*de.Translation BRMonoColor/Farbe / Einfarbig: ""
+*de.BRMonoColor Auto/Automatisch: ""
+*de.BRMonoColor FullColor/Farbe: ""
+*de.BRMonoColor Mono/Einfarbig: ""
+*de.Translation BRColorMatching/Farbmodus: ""
+*de.BRColorMatching Normal/Normal: ""
+*de.BRColorMatching Vivid/Lebendig: ""
+*de.BRColorMatching None/Keiner: ""
+*de.Translation BRGray/Graustufen verbessern: ""
+*de.BRGray OFF/Aus: ""
+*de.BRGray ON/Ein: ""
+*de.Translation BREnhanceBlkPrt/Schwarzdruck verbessern: ""
+*de.BREnhanceBlkPrt OFF/Aus: ""
+*de.BREnhanceBlkPrt ON/Ein: ""
+*de.Translation TonerSaveMode/Tonersparmodus: ""
+*de.TonerSaveMode OFF/Aus: ""
+*de.TonerSaveMode ON/Ein: ""
+*de.Translation BRImproveOutput/Druckergebnis verbessern: ""
+*de.BRImproveOutput OFF/Aus: ""
+*de.BRImproveOutput BRLessPaperCurl/Papierwellung verringern: ""
+*de.BRImproveOutput BRFixIntensity/Tonerfixierung verbessern: ""
+*de.PageSize Custom/Eigenes Format: ""
+*de.ParamCustomPageSize Width/Breite: ""
+*de.ParamCustomPageSize Height/Höhe: ""
+*de.ParamCustomPageSize WidthOffset/Versatz in der Breite: ""
+*de.ParamCustomPageSize HeightOffset/Versatz in der Höhe: ""
+*de.ParamCustomPageSize Orientation/Ausrichtung: ""
 
 *DefaultFont: Courier
 *Font Courier: Standard "(002.004S)" Standard ROM
