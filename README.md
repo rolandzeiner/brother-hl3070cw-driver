@@ -9,7 +9,8 @@
 [![vibe-coded](https://img.shields.io/badge/vibe-coded-ff69b4?logo=musicbrainz&logoColor=white)](https://en.wikipedia.org/wiki/Vibe_coding)
 
 Keep printing on your Brother HL-3070CW colour laser printer with a current Mac, a Linux PC or a
-Raspberry Pi.
+Raspberry Pi. Nine printers with the same engine are supported too, untested
+([Supported printers](#supported-printers)).
 
 Brother's own macOS driver for this printer contains a program for Intel processors. On Apple
 Silicon Macs it only runs through Rosetta 2, which Apple keeps available only through macOS 27.
@@ -19,15 +20,11 @@ Black-and-white pages come out exactly as with Brother's driver, also in Fine qu
 pages practically the same. It also runs on Linux, for example on a Raspberry Pi
 ([Linux and Raspberry Pi](#linux-and-raspberry-pi)).
 
-The native driver also lists nine printers with the same Brother engine: HL-3040CN, HL-3045CN,
-HL-3075CW, DCP-9010CN, MFC-9010CN, MFC-9120CN, MFC-9125CN, MFC-9320CW and MFC-9325CW. They are
-marked *untested*: Brother's driver writes the same data for them as for the HL-3070CW, but this
-driver has never printed on one. Faxing is not supported.
-
 This project is not made or endorsed by Brother.
 
 ## Contents
 
+- [Supported printers](#supported-printers)
 - [Install](#install)
 - [Add the printer](#add-the-printer)
 - [Print](#print)
@@ -40,6 +37,38 @@ This project is not made or endorsed by Brother.
 - [Security](#security)
 - [License and trademarks](#license-and-trademarks)
 
+## Supported printers
+
+| Printer | Native driver | PostScript driver | Tested |
+|---|:---:|:---:|:---:|
+| HL-3070CW | Yes | Yes | **Yes** |
+| HL-3040CN | Yes, from 1.1 | No | No |
+| HL-3045CN | Yes, from 1.1 | No | No |
+| HL-3075CW | Yes, from 1.1 | No | No |
+| DCP-9010CN | Yes, from 1.1 | No | No |
+| MFC-9010CN | Yes, from 1.1 | No | No |
+| MFC-9120CN | Yes, from 1.1 | No | No |
+| MFC-9125CN | Yes, from 1.1 | No | No |
+| MFC-9320CW | Yes, from 1.1 | No | No |
+| MFC-9325CW | Yes, from 1.1 | No | No |
+
+*Tested* means that this driver has printed on that printer, on paper. On the HL-3070CW that was in
+black and white. Colour has not been printed on paper yet ([What works](#what-works)).
+
+The other nine have the same engine. In all 65 of the project's test jobs, Brother's own driver
+writes the same data for each of them as for the HL-3070CW. They are marked *untested* in the list
+of drivers too. If you have one, please
+[tell us whether it prints](https://github.com/rolandzeiner/brother-hl3070cw-driver/issues), and
+name the model.
+
+For those nine:
+
+- The driver uses the data files of Brother's HL-3070CW driver. Follow the instructions below as
+  they are written, also where they say HL-3070CW, and choose your own model when you add the
+  printer.
+- Only printing is supported. Faxing and scanning are not.
+- The [Docker print server](docker/README.md) supports only the HL-3070CW.
+
 ## Install
 
 These steps are for a Mac. On Linux, follow [Linux and Raspberry Pi](#linux-and-raspberry-pi).
@@ -49,7 +78,7 @@ GitHub account or any developer tools.
 
 ### 1. Check for Brother's driver
 
-The driver comes in two versions:
+The driver comes in two versions. The PostScript one is for the HL-3070CW only.
 
 | | Native driver | PostScript driver |
 |---|---|---|
@@ -57,8 +86,8 @@ The driver comes in two versions:
 | Needs Brother's driver files on the Mac | Yes | No |
 
 The native version uses some data files (halftone patterns, colour tables and colour profiles)
-from Brother's own macOS driver for the HL-3070CW. If you have printed with this printer on this
-Mac before, those files are almost certainly there already, and you can go on to step 2.
+from Brother's own macOS driver for the HL-3070CW. If you have printed with this printer, or one of the
+other [supported printers](#supported-printers), using Brother's driver on this Mac before, those files are almost certainly there already, and you can go on to step 2.
 
 If not, install Brother's driver first:
 
@@ -73,18 +102,22 @@ package is `Brother_PrinterDrivers_ColorLaser`, version 5.0.0. Whether that down
 same files, and whether it installs on macOS 27, has not been checked. Only the data files are used;
 Brother's Intel program is never run.
 
-You can also take the data out of Brother's package without installing it. Install this driver
-(steps 2 to 4), then give the package to this helper, without `sudo`: either Brother's Mac `.pkg`,
-or its Linux driver `hl3070cwlpr-1.1.2-1.i386.rpm` from the
-[Linux section](#linux-and-raspberry-pi). The Linux package has no colour profiles, so colours, and
-possibly greys, then look slightly different from Brother's Mac driver.
+From version 1.1 you can also take the data out of Brother's package without installing it. Install
+this driver (steps 2 to 4), then give the package to this helper, without `sudo`:
+
+- Brother's Mac package, a `.pkg`. If you have a `.dmg`, open it and use the `.pkg` inside. This was
+  tested with a package rebuilt from an installed copy of Brother's driver, not yet with Brother's
+  own download.
+- Or Brother's Linux driver `hl3070cwlpr-1.1.2-1.i386.rpm` from the
+  [Linux section](#linux-and-raspberry-pi). It has no colour profiles, so colours, and possibly
+  greys, then look slightly different from Brother's Mac driver.
 
 ```sh
 /Library/Printers/HL3070CW-Native/add-brother-data.sh ~/Downloads/hl3070cwlpr-1.1.2-1.i386.rpm
 ```
 
-If you cannot get Brother's files, use the PostScript version of this driver. It works without
-them.
+If you cannot get Brother's files and have an HL-3070CW, use the PostScript version of this driver.
+It works without them.
 
 ### 2. Download the installer
 
@@ -131,8 +164,10 @@ xattr -d com.apple.quarantine ~/Downloads/HL3070CW-Driver-0.5.1.pkg
 
 ### 4. Run the installer
 
-Click through the installer and enter your administrator password when asked. It installs both
-driver versions. If Brother's driver files are missing, it installs only the PostScript version.
+Click through the installer and enter your administrator password when asked. It installs the
+native driver for all [supported printers](#supported-printers) and the PostScript driver for the
+HL-3070CW. If Brother's driver files are missing, only the PostScript driver is listed until you
+have added the files ([step 1](#1-check-for-brothers-driver)).
 
 ### Updating
 
@@ -142,20 +177,25 @@ keep their settings. The installer gives them the new version's options (Print Q
 
 ## Add the printer
 
-macOS cannot change the driver of a printer that is already set up, so if your HL-3070CW is
-already in the list, remove it first and add it again.
+macOS cannot change the driver of a printer that is already set up, so if your printer is already
+in the list, remove it first and add it again.
 
 1. Open **System Settings** > **Printers & Scanners**.
-2. If the HL-3070CW is listed, select it and click **Remove Printer** (or the **−** button).
+2. If your printer is listed, select it and click **Remove Printer** (or the **−** button).
 3. Make sure the printer is switched on and connected to your network. Click **Add Printer, Scanner or Fax...**.
-4. Select the HL-3070CW in the list.
+4. Select your printer in the list.
    - If it does not appear, click the globe icon (**IP**). Enter the printer's IP address, set
      **Protocol** to **HP Jetdirect - Socket**, and leave **Queue** empty. The printer's own
      display shows its IP address in its network settings.
-5. In **Use**, choose **Select Software...**, type `HL-3070CW` into the search field, select
-   **Brother HL-3070CW, native driver (open source)** (or
-   **Brother HL-3070CW, PostScript (BR-Script 3)**) and click **OK**. The entries ending in
-   *series CUPS* and *BR-Script3* (without a space) are Brother's own.
+5. In **Use**, choose **Select Software...**, type your model into the search field, for example
+   `HL-3070CW`, select the entry and click **OK**:
+   - HL-3070CW: **Brother HL-3070CW, native driver (open source)**, or
+     **Brother HL-3070CW, PostScript (BR-Script 3)**.
+   - The other nine: the entry with your model that ends in
+     **native driver (open source, untested)**, for example
+     **Brother HL-3040CN, native driver (open source, untested)**.
+
+   The entries ending in *CUPS* and *BR-Script3* (without a space) are Brother's own.
 6. Click **Add**.
 
 ## Print
@@ -173,11 +213,14 @@ native driver; [What works](#what-works) shows which of them the PostScript driv
 - **Improve Gray Color**, **Enhance Black Printing**, **Toner Save Mode** and **Improve Print
   Output** (less paper curl or better toner fixing) work as in Brother's driver. Enhance Black
   Printing applies to colour jobs only.
-- **Custom paper sizes** from 70 x 116 mm to 215.9 x 406.4 mm work with the native driver.
+- **Custom paper sizes** (from version 1.1) from 70 x 116 mm to 215.9 x 406.4 mm work with the
+  native driver. The data matches what Brother's driver sends. Choosing them in the print dialog,
+  and printing them on paper, has not been tested.
 - **Paper size**, **paper source** (tray or manual feed) and **media type** (plain, thin, thick,
   envelopes, labels and more) are in the usual places.
 
-The options of the driver are in English and German.
+From version 1.1 the options are in English and German, following the language of your system. The
+names in this guide are the English ones.
 
 To make black and white the default, open the print dialog, set **Color / Mono** to **Mono** and
 save the settings as a preset.
@@ -200,9 +243,10 @@ your user name and the document with **+** and **−**, and enter the PIN.
 **macOS says the installer cannot be opened.** See [step 3](#3-open-the-installer).
 
 **"Brother HL-3070CW, native driver (open source)" is not in the list of drivers.** Brother's driver
-files were not found or not complete when you installed. Install Brother's driver
-([step 1](#1-check-for-brothers-driver)) and run this installer again. Until then, use
-**Brother HL-3070CW, PostScript (BR-Script 3)**.
+files were not found or not complete when you installed. The same goes for the entries of the other
+printers. Either install Brother's driver and run this installer again, or take the files from
+Brother's package with `add-brother-data.sh` (both in [step 1](#1-check-for-brothers-driver)). Until
+then, an HL-3070CW can use **Brother HL-3070CW, PostScript (BR-Script 3)**.
 
 **"The printer software is not compatible with this device."** The printer still uses a driver for
 Intel processors, usually Brother's own: it was added before you installed this driver, or Brother's
@@ -216,8 +260,8 @@ while they run. Quit the app (Cmd+Q), open it again and print.
 this driver. Run the newest installer; it updates the printers that are already set up.
 
 **Fine prints the same as Normal.** The files for Fine quality come from Brother's driver. If they
-were not on the Mac when you installed, Fine jobs are printed in Normal quality. Install Brother's
-driver ([step 1](#1-check-for-brothers-driver)) and run this installer again.
+were not on the Mac when you installed, Fine jobs are printed in Normal quality. Add them as in
+[step 1](#1-check-for-brothers-driver).
 
 **The printer does not respond or jobs wait in the queue.** Check that the printer is switched on
 and on the same network as the Mac. A job sent while the printer is off is printed once it is
@@ -237,12 +281,14 @@ grep -E "postinstall: (Brother|Copying|Printer|Could not)" /var/log/install.log
 ```
 
 **Something else.** [Open an issue](https://github.com/rolandzeiner/brother-hl3070cw-driver/issues)
-and describe what you printed and what happened. A GitHub account is needed for that.
+and describe your printer model, what you printed and what happened. A GitHub account is needed for
+that.
 
 ## Uninstall
 
 1. Open **Terminal**: press Cmd+Space, type `Terminal` and press Return.
-2. Paste this line, press Return and enter your password (it is not shown while you type):
+2. Paste this line, press Return and enter your password (it is not shown while you type). It
+   removes the driver for all supported printers:
 
    ```sh
    sudo /Library/Printers/HL3070CW-Native/uninstall.sh
@@ -255,11 +301,13 @@ and describe what you printed and what happened. A GitHub account is needed for 
 
 The driver also runs on Linux with CUPS, for example on a Raspberry Pi, which can then offer the
 printer to every computer and phone in the house. Each release has a package for 64-bit ARM and one
-for 64-bit Intel and AMD, both with the native and the PostScript driver. They need Debian 12,
+for 64-bit Intel and AMD, both with the native driver for all
+[supported printers](#supported-printers) and the PostScript driver for the HL-3070CW. They need Debian 12,
 Raspberry Pi OS 12, Ubuntu 24.04 or newer. Each is installed and printed through CUPS automatically
 on Debian 12, Debian 13 and Ubuntu 24.04 before a release. 32-bit systems are not supported.
 
-1. For the native driver, download Brother's Linux driver for the HL-3070CW from Brother's
+1. For the native driver, download Brother's Linux driver for the HL-3070CW, also if you have one of
+   the other supported printers, from Brother's
    [HL-3070CW download page](https://support.brother.com/g/b/downloadtop.aspx?c=us&lang=en&prod=hl3070cw_all):
    choose **Linux**, then the **LPR printer driver** as an rpm or a deb package. Brother made it
    for Intel PCs, but the installer only takes the halftone patterns and colour tables out of it
@@ -298,6 +346,15 @@ on Debian 12, Debian 13 and Ubuntu 24.04 before a release. 32-bit systems are no
    Without Brother's files the installer warns that the native driver is missing and ends with
    "Finished with problems". The PostScript printer is set up all the same.
 
+   `--queue` always sets up an HL-3070CW. For one of the other nine printers, run the installer with
+   `--brother-package` only, then create the printer with the PPD of your model. The file name is
+   the model in lower case without the hyphen, here for an MFC-9320CW:
+
+   ```sh
+   sudo lpadmin -p MFC9320CW -E -v socket://192.0.2.10:9100 \
+       -P /usr/share/ppd/hl3070cw/mfc9320cw-native.ppd
+   ```
+
 All options work as on a Mac, Fine and Secure Print included (`lp -o job-password=1234 file`). Two
 differences:
 
@@ -321,32 +378,37 @@ cd brother-hl3070cw-driver
 make
 ```
 
-To share the printer with every computer and phone in the house over AirPrint, run it as a print
+To share an HL-3070CW with every computer and phone in the house over AirPrint, run it as a print
 server in Docker, for example on a Raspberry Pi: see [docker/README.md](docker/README.md).
 
 ## What works
+
+This is for the HL-3070CW. The native driver gives the other [supported printers](#supported-printers)
+the same data, untested on paper.
 
 | | Native driver | PostScript driver |
 |---|---|---|
 | Black and white | Identical to Brother's driver, byte for byte | The printer's own rendering |
 | Colour | Brother's colour tables and halftones; about 99.96 % of all dots identical to Brother's driver | The printer's own rendering |
 | Fine quality (2400 dpi class) | The same dots as Brother's driver (in colour: as above); the compressed data matches Brother's for about 95 % of lines | Not available |
-| Paper sizes | All 22 of Brother's driver, and custom sizes | All 22 |
+| Paper sizes | All 22 of Brother's driver, and custom sizes from 1.1 | All 22 |
 | Tray and manual feed | Yes | Yes |
 | Media types | All 11 | All 11 |
 | Color / Mono / Auto, Color Mode, Improve Gray, Enhance Black, Improve Print Output | Yes | Color / Mono only |
 | Toner Save | Yes | Yes |
 | Secure Print (PIN) | Yes | No |
+| Sleep Time (the printer's power-saving delay) | No, set it on the printer | No, set it on the printer |
+| Option names in German | From 1.1 | From 1.1 |
 
 The driver has been tested with an HL-3070CW connected over Wi-Fi. Ethernet and USB should work the
 same way but have not been tested.
 
 With versions 0.4.0 and 0.4.1, black-and-white pages have been printed on paper from a Mac and
 through a Raspberry Pi, in Normal and in Fine quality, and as Secure Print jobs released on the
-printer's panel with their PIN. Versions 0.5.0 and 0.5.1 give the same printer data in the project's
-tests and have not been printed on paper yet. Colour has so far only been compared with the data Brother's
-driver produces, because the test printer's cyan cartridge is empty. If a colour page looks wrong,
-please
+printer's panel with their PIN. Later versions give the same printer data for such pages in the
+project's tests and have not been printed on paper yet. Colour has so far only been compared with
+the data Brother's driver produces, because the test printer's cyan cartridge is empty. If a colour
+page looks wrong, please
 [open an issue](https://github.com/rolandzeiner/brother-hl3070cw-driver/issues).
 
 Like other printer drivers of this kind (Brother's included), it is a PPD-based driver. macOS 27 and
@@ -367,7 +429,9 @@ document into an image; the driver converts the image into Brother's halftone do
 printer expects.
 
 The halftone patterns, colour tables and colour profiles are Brother's. On a Mac, the installer
-copies them from Brother's installed driver into `/Library/Printers/HL3070CW-Native/data`. On Linux,
+copies them from Brother's installed driver, or `add-brother-data.sh` from a package of Brother's,
+into `/Library/Printers/HL3070CW-Native/data`. All supported printers share them. Without profiles
+(data from the Linux package), the driver's PPDs go in without colour matching. On Linux,
 it takes the patterns and tables from Brother's Linux package or installed driver into
 `/usr/share/hl3070cw-native/data`; there are no profiles there. The colour tables are read out of
 Brother's driver program file. None of Brother's files are part of this repository or its releases,
@@ -387,6 +451,7 @@ make check           # sanitizer build on made-up data: needs nothing of Brother
 make lint            # clang-tidy or the Clang analyzer, shellcheck, cupstestppd
 make test            # compare with checksums of Brother's output (needs Brother's data files, no Rosetta)
 make oracle-test     # compare live with Brother's driver (needs it and Rosetta 2)
+python3 -I tools/siblings.py           # the other printers against the same checksums (needs the same)
 python3 -I tools/finecheck.py --real   # Fine: image and line-by-line comparison
                      # (exits 1: random colours differ slightly, see docs/FORMAT.md)
 make pkg             # macOS: the installer package, in build/pkg/
@@ -409,7 +474,8 @@ Repository layout:
   compresses Fine lines, `halftone.c` and `color.c` turn pixels into toner dots, `fsutil.c` reads
   and writes files safely when copying Brother's data.
 - `ppd/`: the PPD files, generated by `tools/genppd.py`: the native one for macOS, its Linux version
-  in `ppd/linux/`, and the PostScript one for both systems.
+  in `ppd/linux/`, and the PostScript one for both systems. `siblings/` in both folders holds the
+  other printers'. A new one goes into `SIBLINGS` in `tools/genppd.py`.
 - `install.sh`, `uninstall.sh`: install from the source tree and uninstall, on a Mac.
 - `install-linux.sh`: the Linux installer.
 - `docker/`: the print server.
@@ -441,7 +507,8 @@ its data files and the print job, writes the printer data, and does nothing else
 inside the sandbox macOS puts around printer drivers. Linux has no such sandbox: there the driver is
 confined only by the unprivileged account CUPS runs it as (usually `lp`).
 
-The installers run one step of the driver as root: copying Brother's data. That step takes no
+The installers and `add-brother-data.sh` run one step of the driver as root: copying Brother's
+data. (The helper opens Brother's package as you.) That step takes no
 paths from its command line, follows no symbolic links inside Brother's package and uses only
 files that belong to root and are not writable by everyone.
 
