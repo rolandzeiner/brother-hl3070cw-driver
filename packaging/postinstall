@@ -1,8 +1,9 @@
 #!/bin/bash
 # Installer package: runs as root after the files are in place.
-# Copies Brother's data for the native driver, or removes the native PPD when
-# Brother's driver is not installed (the PostScript PPD works without it), and
-# gives printers that already use this driver the new PPD.
+# Copies Brother's data for the native driver (a complete copy from an earlier
+# installation is kept if that fails), or removes the native PPD when there is
+# no data (the PostScript PPD works without it), and gives printers that
+# already use this driver the new PPD.
 # Written for macOS's /bin/bash 3.2. Always exits 0: a problem here must not
 # make Installer report a failed installation when a usable driver is in place.
 set -uo pipefail
@@ -29,8 +30,12 @@ copy_brother_data() {
         if "$DRIVER_DIR/rastertohl3070cw" --extract-brother-data; then
             return 0
         fi
+        if "$DRIVER_DIR/rastertohl3070cw" --check-data; then
+            echo "Copying Brother's data failed; keeping the copy from an earlier installation" >&2
+            return 0
+        fi
         echo "Copying Brother's data failed; removing the native PPD" >&2
-    elif [[ -f $DRIVER_DIR/data/table-600-grayon-normal.bin ]]; then
+    elif "$DRIVER_DIR/rastertohl3070cw" --check-data; then
         return 0 # a copy from an earlier installation is still there
     else
         echo "Brother's HL-3070CW driver is not installed; only the PostScript PPD is available" >&2

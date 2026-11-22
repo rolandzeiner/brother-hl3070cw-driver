@@ -28,6 +28,8 @@ readonly DATA_DIR=$SHARE_DIR/data
 readonly UNPACK_DIR=$SHARE_DIR/unpack # where the filter looks for a package (--unpacked)
 readonly QUEUE_PPDS=/etc/cups/ppd
 readonly BROTHER_INSTALLED=/opt/brother/Printers/hl3070cw
+# hl3070cwlpr-1.1.2-1.i386.rpm, the package this driver is tested with
+readonly BROTHER_RPM_SHA256=147208bf44976d488f73ad144187182301983de2821b0efe9a1370d3552dfb22
 readonly NATIVE_NICK="Brother HL-3070CW, native driver (open source)"
 readonly PS_NICK="Brother HL-3070CW, PostScript (BR-Script 3)"
 
@@ -75,6 +77,7 @@ main() {
         die "the driver does not run on this computer ($(uname -m); it needs CUPS, and the package for this processor): $version"
     fi
     log "Filter: $version"
+    DATA_CHECK=$bin
 
     log "Installing the filter into $FILTER_DIR"
     run install -d -m 755 "$FILTER_DIR" "$PPD_DIR" "$SHARE_DIR"
@@ -117,6 +120,13 @@ copy_brother_data() {
     local filter="$FILTER_DIR/rastertohl3070cw"
     if [[ -n $PACKAGE ]]; then
         log "Unpacking Brother's driver package $PACKAGE (its programs are not run)"
+        if [[ $PACKAGE == *.rpm ]]; then
+            local sum
+            sum=$(sha256sum -- "$PACKAGE") || die "cannot read $PACKAGE"
+            if [[ ${sum%% *} != "$BROTHER_RPM_SHA256" ]]; then
+                caution "$PACKAGE is not the package this driver was tested with (hl3070cwlpr-1.1.2-1.i386.rpm, SHA-256 $BROTHER_RPM_SHA256)."
+            fi
+        fi
         if ((DRY_RUN)); then
             run "$filter" --extract-brother-data --unpacked
             return 0
@@ -146,18 +156,18 @@ copy_brother_data() {
         if "$filter" --extract-brother-data --unpacked; then
             return 0
         fi
-        warn "Copying Brother's data failed; the native driver will not work."
-        return 1
+        copy_failed
+        return
     fi
     if [[ -d $BROTHER_INSTALLED ]]; then
         log "Copying Brother's data from its installed driver"
         if run "$filter" --extract-brother-data; then
             return 0
         fi
-        warn "Copying Brother's data failed; the native driver will not work."
-        return 1
+        copy_failed
+        return
     fi
-    if [[ -f $DATA_DIR/table-600-grayon-normal.bin ]]; then
+    if "$DATA_CHECK" --check-data; then
         log "Brother's data from an earlier installation is still in $DATA_DIR"
         return 0
     fi
@@ -165,6 +175,16 @@ copy_brother_data() {
     warn "HL-3070CW (the LPR driver, hl3070cwlpr, .rpm or .deb) from support.brother.com and run:"
     warn "  sudo $0 --brother-package path/to/hl3070cwlpr-1.1.2-1.i386.rpm"
     warn "Until then only the PostScript PPD is installed."
+    return 1
+}
+
+# Status 0: the copy of an earlier installation is complete and serves on.
+copy_failed() {
+    if "$DATA_CHECK" --check-data; then
+        warn "Copying Brother's data failed; keeping the copy from an earlier installation."
+        return 0
+    fi
+    warn "Copying Brother's data failed; the native driver will not work."
     return 1
 }
 
@@ -311,6 +331,8 @@ warn() {
     printf '[WARN] %s\n' "$*" >&2
     PROBLEMS=1
 }
+# Worth knowing, but no reason to finish with problems.
+caution() { printf '[WARN] %s\n' "$*" >&2; }
 die() {
     printf '[ERROR] %s\n' "$*" >&2
     exit 2

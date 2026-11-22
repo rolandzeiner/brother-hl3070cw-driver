@@ -28,10 +28,15 @@
 
 set -Eeuo pipefail
 shopt -s inherit_errexit
+# the settings hold lists that are split at spaces, and ALLOW_FROM may be "*":
+# never read them as file name patterns
+set -f
 
 readonly FILTER=/usr/lib/cups/filter/rastertohl3070cw
 readonly UNPACK_DIR=/usr/share/hl3070cw-native/unpack # where the filter looks for a package (--unpacked)
 readonly CUPS_TEMPLATE=/usr/share/hl3070cw-print-server-etc-cups
+# hl3070cwlpr-1.1.2-1.i386.rpm, the package this driver is tested with
+readonly BROTHER_RPM_SHA256=147208bf44976d488f73ad144187182301983de2821b0efe9a1370d3552dfb22
 
 CUPSD_PID=''
 
@@ -223,9 +228,15 @@ trusted_web() {
 }
 
 copy_brother_data() {
-    local pkg dest=$UNPACK_DIR/package
+    local pkg sum dest=$UNPACK_DIR/package
     pkg=$(find /brother -maxdepth 1 -type f \( -name 'hl3070cwlpr*.rpm' -o -name 'hl3070cwlpr*.deb' \) 2>/dev/null | head -n 1)
     [[ -n $pkg ]] || die "Brother's Linux driver package (hl3070cwlpr .rpm or .deb) is not in /brother; mount the folder that holds it at /brother, or set PRINTER_DRIVER=postscript"
+    if [[ $pkg == *.rpm ]]; then
+        sum=$(sha256sum -- "$pkg")
+        if [[ ${sum%% *} != "$BROTHER_RPM_SHA256" ]]; then
+            log "WARNING: ${pkg##*/} is not the package this driver was tested with (hl3070cwlpr-1.1.2-1.i386.rpm, SHA-256 $BROTHER_RPM_SHA256)"
+        fi
+    fi
     # as in install-linux.sh: inside a folder only root can enter, and
     # without the package's owners and modes
     rm -rf -- "${UNPACK_DIR:?}"

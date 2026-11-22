@@ -1,7 +1,8 @@
 #!/bin/bash
 # Test the macOS installer package on a GitHub build machine: install it next
 # to a made-up copy of Brother's driver, print through CUPS into a local
-# socket, uninstall it. It overwrites /Library/Printers/Brother, so it refuses
+# socket, update it (also with a damaged copy of Brother's driver), uninstall
+# it. It overwrites /Library/Printers/Brother, so it refuses
 # to run anywhere else.
 #
 #   tests/macos-package.sh build/pkg/NAME.pkg
@@ -58,6 +59,12 @@ PY
     files=$(find "$DRIVER_DIR/data" -type f | wc -l | tr -d ' ')
     [[ $files == 32 ]] || fail "$files data files, want 32"
 
+    local ppd
+    for ppd in "Brother HL-3070CW native" "Brother HL-3070CW PostScript"; do
+        # no waivers: everything the PPDs name is installed now
+        cupstestppd "/$MODELS/$ppd.ppd" || fail "cupstestppd refuses $ppd"
+    done
+
     sudo lpadmin -p hl_native -E -v socket://127.0.0.1:9101/?waiteof=false -m "$MODELS/Brother HL-3070CW native.ppd"
     sudo lpadmin -p hl_ps -E -v socket://127.0.0.1:9101/?waiteof=false -m "$MODELS/Brother HL-3070CW PostScript.ppd"
     print_job hl_native 'XL2HB' -o BRMonoColor=Mono
@@ -69,6 +76,17 @@ PY
     sudo installer -pkg "$pkg" -target /
     sudo grep -q '^\*DefaultBRMonoColor: Mono' /etc/cups/ppd/hl_native.ppd || fail "updating lost the printer's setting"
     print_job hl_native 'XL2HB'
+
+    # Brother's driver damaged: a complete earlier copy keeps serving ...
+    sudo rm -f "$BROTHER/Brother LUT/0600-k_cache08.bin"
+    sudo installer -pkg "$pkg" -target /
+    [[ -f "/$MODELS/Brother HL-3070CW native.ppd" ]] || fail "a failed copy removed the native PPD"
+    print_job hl_native 'XL2HB'
+    # ... an incomplete one does not
+    sudo rm -f "$DRIVER_DIR/data/0600-k_cache08.bin"
+    sudo installer -pkg "$pkg" -target /
+    [[ ! -e "/$MODELS/Brother HL-3070CW native.ppd" ]] || fail "native PPD installed without complete data"
+    printf 'OK   a failed copy keeps complete older data, and only that\n'
 
     sudo "$DRIVER_DIR/uninstall.sh"
     [[ ! -e $DRIVER_DIR ]] || fail "uninstall left $DRIVER_DIR"

@@ -68,6 +68,8 @@ main() {
     print_job postscript postscript -o BRMonoColor=Mono
     printf 'OK   PostScript driver, update without a package\n'
 
+    check_failed_copy "$dir" "${packages[0]}"
+
     "$dir/install-linux.sh" --uninstall
     local left
     for left in "$FILTER" "$SHARE_DIR" /usr/share/ppd/hl3070cw; do
@@ -105,6 +107,30 @@ PY
         'Maintainer: Test <test@example.invalid>' 'Description: made up for a test' >"$deb/DEBIAN/control"
     chmod 644 "$deb/DEBIAN/control"
     dpkg-deb -Zgzip --build "$deb" "$WORK/fake.deb" >/dev/null 2>&1
+}
+
+# check_failed_copy INSTALLER-DIR GOOD-PACKAGE
+check_failed_copy() {
+    local dir=$1 good=$2 broken=$WORK/broken.rpm status=0
+    local ppd=/usr/share/ppd/hl3070cw/hl3070cw-native.ppd
+    mkdir -p "$WORK/empty/opt/brother/Printers/hl3070cw"
+    tar -C "$WORK/empty" -cf "$broken" .
+
+    "$dir/install-linux.sh" --brother-package "$broken" >"$WORK/install.log" 2>&1 || status=$?
+    ((status == 1)) || fail "a failed copy ended with status $status, not 1"
+    [[ -f $ppd ]] || fail "a failed copy removed the native PPD"
+    grep -q 'keeping the copy' "$WORK/install.log" || fail "no warning about the failed copy"
+    grep -q 'not the package this driver was tested with' "$WORK/install.log" || fail "no warning about an unknown package"
+    print_job native xl2hb -o BRMonoColor=Mono
+
+    rm -f -- "$SHARE_DIR/data/0600-m_cache08.bin"
+    "$dir/install-linux.sh" --brother-package "$broken" >/dev/null 2>&1 || true
+    [[ ! -e $ppd ]] || fail "native PPD installed without complete data"
+    "$dir/install-linux.sh" >/dev/null 2>&1 || true
+    [[ ! -e $ppd ]] || fail "one file taken for a complete copy"
+    "$dir/install-linux.sh" --brother-package "$good" >/dev/null
+    [[ -f $ppd ]] || fail "a good package did not bring the native driver back"
+    printf 'OK   a failed copy keeps complete older data, and only that\n'
 }
 
 check_data() {

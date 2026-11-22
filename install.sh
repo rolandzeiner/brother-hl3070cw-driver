@@ -18,11 +18,13 @@ readonly DRIVER_DIR=/Library/Printers/HL3070CW-Native
 readonly PPD_DIR=/Library/Printers/PPDs/Contents/Resources
 readonly NATIVE_PPD_NAME="Brother HL-3070CW native.ppd"
 readonly PS_PPD_NAME="Brother HL-3070CW PostScript.ppd"
+readonly NATIVE_NICK="Brother HL-3070CW, native driver (open source)" # as macOS lists it
+readonly PKG_ID=io.github.rolandzeiner.hl3070cw-driver
 readonly BROTHER_FILTER=/Library/Printers/Brother/Filter/rastertobrother3040.bundle/Contents/MacOS/rastertobrother3040
 readonly BROTHER_LUT="/Library/Printers/Brother/Brother LUT"
 # Absolute paths: commands run through sudo must not depend on the caller's PATH.
 readonly SUDO_BIN=/usr/bin/sudo MKDIR=/bin/mkdir INSTALL=/usr/bin/install RM=/bin/rm
-readonly LPADMIN=/usr/sbin/lpadmin LPSTAT=/usr/bin/lpstat STAT=/usr/bin/stat
+readonly LPADMIN=/usr/sbin/lpadmin LPSTAT=/usr/bin/lpstat STAT=/usr/bin/stat PKGUTIL=/usr/sbin/pkgutil
 
 main() {
     DRY_RUN=0
@@ -69,10 +71,14 @@ main() {
         have_brother=1
         log "Copying Brother's halftone patterns, colour tables and ICC profiles"
         if ! run "${SUDO[@]+"${SUDO[@]}"}" "$DRIVER_DIR/rastertohl3070cw" --extract-brother-data; then
-            warn "Copying Brother's data failed; the native driver will not work."
-            have_brother=0
+            if "$bin" --check-data; then
+                warn "Copying Brother's data failed; keeping the copy from an earlier installation."
+            else
+                warn "Copying Brother's data failed; the native driver will not work."
+                have_brother=0
+            fi
         fi
-    elif [[ -d $DRIVER_DIR/data ]]; then
+    elif "$bin" --check-data; then
         have_brother=1
         log "Brother's driver is not installed, but a copy of its data is already in $DRIVER_DIR/data"
     else
@@ -97,7 +103,7 @@ main() {
     printf '\nDone.'
     if [[ -z $QUEUE ]]; then
         printf ' Add the printer in System Settings > Printers & Scanners and choose\n'
-        printf '"%s" as the driver (Use: Select Software...).\n' "${NATIVE_PPD_NAME%.ppd}"
+        printf '"%s" as the driver (Use: Select Software...).\n' "$NATIVE_NICK"
     else
         printf '\n'
     fi
@@ -146,6 +152,10 @@ uninstall() {
     esac
     if [[ -d $DRIVER_DIR ]]; then
         run "${SUDO[@]+"${SUDO[@]}"}" "$RM" -rf -- "${DRIVER_DIR:?}"
+    fi
+    # the installer package's receipt, as uninstall.sh does
+    if "$PKGUTIL" --pkg-info "$PKG_ID" >/dev/null 2>&1; then
+        run "${SUDO[@]+"${SUDO[@]}"}" "$PKGUTIL" --forget "$PKG_ID" || warn "could not forget the package receipt"
     fi
     local queues
     queues=$("$LPSTAT" -v 2>/dev/null | /usr/bin/grep -i "HL3070CW\|hl-3070" || true)
