@@ -74,7 +74,7 @@ without Brother's files.
 ### 2. Download the installer
 
 Open the [latest release](https://github.com/rolandzeiner/brother-hl3070cw-driver/releases/latest).
-Under **Assets**, click the file ending in `.pkg` (for example `HL3070CW-Driver-0.5.1.pkg`). It
+Under **Assets**, click the file ending in `.pkg` (for example `HL3070CW-Driver-0.5.2.pkg`). It
 goes to your Downloads folder.
 
 To check that a file was built by GitHub from this repository (releases after 0.5.0, with the
@@ -88,8 +88,8 @@ gh attestation verify ~/Downloads/FILE --repo rolandzeiner/brother-hl3070cw-driv
 
 Double-click the downloaded file. The first time, macOS refuses to open it:
 
-> **"HL3070CW-Driver-0.5.1.pkg" Not Opened**
-> Apple could not verify "HL3070CW-Driver-0.5.1.pkg" is free of malware that may harm your Mac or
+> **"HL3070CW-Driver-0.5.2.pkg" Not Opened**
+> Apple could not verify "HL3070CW-Driver-0.5.2.pkg" is free of malware that may harm your Mac or
 > compromise your privacy.
 
 macOS shows this for every installer that is not signed with a paid Apple developer certificate,
@@ -98,7 +98,7 @@ the release's `SHA256SUMS` file has its checksum. To open it anyway:
 
 1. Click **Done**. Do not click **Move to Trash**.
 2. Open **System Settings** and click **Privacy & Security** in the sidebar.
-3. Scroll down to **Security**. There is a line saying that "HL3070CW-Driver-0.5.1.pkg" was
+3. Scroll down to **Security**. There is a line saying that "HL3070CW-Driver-0.5.2.pkg" was
    blocked to protect your Mac. Click **Open Anyway** next to it. The button appears only for
    about an hour after you tried to open the file; if it is missing, double-click the file again
    first.
@@ -111,7 +111,7 @@ If you are comfortable with Terminal, this removes the download mark from the fi
 which a double-click opens it directly:
 
 ```sh
-xattr -d com.apple.quarantine ~/Downloads/HL3070CW-Driver-0.5.1.pkg
+xattr -d com.apple.quarantine ~/Downloads/HL3070CW-Driver-0.5.2.pkg
 ```
 
 ### 4. Run the installer
@@ -253,8 +253,8 @@ on Debian 12, Debian 13 and Ubuntu 24.04 before a release. 32-bit systems are no
 
    ```sh
    sudo apt install cups cups-filters libarchive-tools
-   tar -xzf ~/Downloads/HL3070CW-Driver-0.5.1-linux-arm64.tar.gz
-   cd HL3070CW-Driver-0.5.1-linux-arm64
+   tar -xzf ~/Downloads/HL3070CW-Driver-0.5.2-linux-arm64.tar.gz
+   cd HL3070CW-Driver-0.5.2-linux-arm64
    ```
 
 3. Install it with the path of Brother's package. To add the printer at the same time, give it a
@@ -304,7 +304,8 @@ make
 ```
 
 To share the printer with every computer and phone in the house over AirPrint, run it as a print
-server in Docker, for example on a Raspberry Pi: see [docker/README.md](docker/README.md).
+server in Docker, for example on a Raspberry Pi: see [docker/README.md](docker/README.md). Use 0.5.2
+or newer for it: the earlier ones have security flaws.
 
 ## What works
 
@@ -325,7 +326,7 @@ same way but have not been tested.
 
 With versions 0.4.0 and 0.4.1, black-and-white pages have been printed on paper from a Mac and
 through a Raspberry Pi, in Normal and in Fine quality, and as Secure Print jobs released on the
-printer's panel with their PIN. Versions 0.5.0 and 0.5.1 give the same printer data in the project's
+printer's panel with their PIN. Versions from 0.5.0 on give the same printer data in the project's
 tests and have not been printed on paper yet. Colour has so far only been compared with the data Brother's
 driver produces, because the test printer's cyan cartridge is empty. If a colour page looks wrong,
 please
@@ -395,6 +396,8 @@ Repository layout:
 - `install.sh`, `uninstall.sh`: install from the source tree and uninstall, on a Mac.
 - `install-linux.sh`: the Linux installer.
 - `docker/`: the print server.
+- `tests/print-server/`: attacks the print server's access rules from an allowed client, the proxy,
+  an outsider and a program on the server's machine. GitHub runs it on every push to `main` and `dev`.
 - `tests/linux-package.sh`: installs a Linux release package in a throwaway container, prints
   through CUPS and uninstalls it again. GitHub runs it for both processors.
 - `tests/macos-package.sh`: the same for the Mac installer, on GitHub's build machines only.
@@ -429,8 +432,8 @@ files that belong to root and are not writable by everyone.
 
 The code has been reviewed for security problems by its authors, with sanitizer builds, damaged
 input files and static analysis. Those reviews are not a guarantee: they missed flaws in that
-copying step, which were found with CodeQL's help and fixed in 0.5.0. No outside party has audited
-the code. `make check` and `make lint` repeat the tests. GitHub runs both on every push to `main` and
+copying step, which were found with CodeQL's help and fixed in 0.5.0, and flaws in the Docker print
+server's access rules, fixed in 0.5.2. No outside party has audited the code. `make check` and `make lint` repeat the tests. GitHub runs both on every push to `main` and
 `dev`, along with CodeQL, which scans the Mac build.
 
 Like Brother's driver, this one sends the title of the document and your user name to the

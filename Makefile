@@ -10,7 +10,7 @@
 #   make pkg        macOS: installer package in build/pkg/
 #   make dist       Linux: release package for this processor in build/dist/
 
-VERSION  ?= 0.5.1
+VERSION  ?= 0.5.2
 OS       := $(shell uname -s)
 # -ffp-contract=off: no fused multiply-add, so the grey conversion rounds
 # exactly like Brother's filter (see src/halftone.c).
@@ -81,9 +81,9 @@ SCRIPTS  := install.sh install-linux.sh uninstall.sh packaging/postinstall docke
 
 lint:
 ifneq ($(TIDY),)
-	$(TIDY) --quiet --warnings-as-errors='*' $(SRC) tests/fine_lines.c -- $(BASE) $(if $(filter Darwin,$(OS)),-isysroot $$(xcrun --show-sdk-path))
+	$(TIDY) --quiet --warnings-as-errors='*' $(SRC) tests/fine_lines.c docker/web-gate.c -- $(BASE) $(if $(filter Darwin,$(OS)),-isysroot $$(xcrun --show-sdk-path))
 else
-	for f in $(SRC) tests/fine_lines.c; do \
+	for f in $(SRC) tests/fine_lines.c docker/web-gate.c; do \
 	  $(CC) --analyze -Xclang -analyzer-output=text -Xclang -analyzer-werror $(BASE) -o /dev/null $$f || exit 1; done
 endif
 	shellcheck $(SCRIPTS)
@@ -92,7 +92,7 @@ endif
 	cupstestppd -W filters -W profiles -W translations ppd/hl3070cw-native.ppd ppd/hl3070cw-postscript.ppd \
 	  ppd/linux/hl3070cw-native.ppd
 	python3 -I tools/genppd.py --check
-	python3 -I -m compileall -q tools
+	python3 -I -m compileall -q tools tests/print-server
 
 # Compare with the stored reference outputs (works without Rosetta).
 test: $(BIN)
