@@ -10,7 +10,7 @@
 #   make pkg        macOS: installer package in build/pkg/
 #   make dist       Linux: release package for this processor in build/dist/
 
-VERSION  ?= 0.5.0
+VERSION  ?= 0.5.1
 OS       := $(shell uname -s)
 # -ffp-contract=off: no fused multiply-add, so the grey conversion rounds
 # exactly like Brother's filter (see src/halftone.c).

@@ -74,7 +74,7 @@ without Brother's files.
 ### 2. Download the installer
 
 Open the [latest release](https://github.com/rolandzeiner/brother-hl3070cw-driver/releases/latest).
-Under **Assets**, click the file ending in `.pkg` (for example `HL3070CW-Driver-0.5.0.pkg`). It
+Under **Assets**, click the file ending in `.pkg` (for example `HL3070CW-Driver-0.5.1.pkg`). It
 goes to your Downloads folder.
 
 To check that a file was built by GitHub from this repository (releases after 0.5.0, with the
@@ -88,8 +88,8 @@ gh attestation verify ~/Downloads/FILE --repo rolandzeiner/brother-hl3070cw-driv
 
 Double-click the downloaded file. The first time, macOS refuses to open it:
 
-> **"HL3070CW-Driver-0.5.0.pkg" Not Opened**
-> Apple could not verify "HL3070CW-Driver-0.5.0.pkg" is free of malware that may harm your Mac or
+> **"HL3070CW-Driver-0.5.1.pkg" Not Opened**
+> Apple could not verify "HL3070CW-Driver-0.5.1.pkg" is free of malware that may harm your Mac or
 > compromise your privacy.
 
 macOS shows this for every installer that is not signed with a paid Apple developer certificate,
@@ -98,7 +98,7 @@ the release's `SHA256SUMS` file has its checksum. To open it anyway:
 
 1. Click **Done**. Do not click **Move to Trash**.
 2. Open **System Settings** and click **Privacy & Security** in the sidebar.
-3. Scroll down to **Security**. There is a line saying that "HL3070CW-Driver-0.5.0.pkg" was
+3. Scroll down to **Security**. There is a line saying that "HL3070CW-Driver-0.5.1.pkg" was
    blocked to protect your Mac. Click **Open Anyway** next to it. The button appears only for
    about an hour after you tried to open the file; if it is missing, double-click the file again
    first.
@@ -111,7 +111,7 @@ If you are comfortable with Terminal, this removes the download mark from the fi
 which a double-click opens it directly:
 
 ```sh
-xattr -d com.apple.quarantine ~/Downloads/HL3070CW-Driver-0.5.0.pkg
+xattr -d com.apple.quarantine ~/Downloads/HL3070CW-Driver-0.5.1.pkg
 ```
 
 ### 4. Run the installer
@@ -253,8 +253,8 @@ on Debian 12, Debian 13 and Ubuntu 24.04 before a release. 32-bit systems are no
 
    ```sh
    sudo apt install cups cups-filters libarchive-tools
-   tar -xzf ~/Downloads/HL3070CW-Driver-0.5.0-linux-arm64.tar.gz
-   cd HL3070CW-Driver-0.5.0-linux-arm64
+   tar -xzf ~/Downloads/HL3070CW-Driver-0.5.1-linux-arm64.tar.gz
+   cd HL3070CW-Driver-0.5.1-linux-arm64
    ```
 
 3. Install it with the path of Brother's package. To add the printer at the same time, give it a
@@ -325,8 +325,8 @@ same way but have not been tested.
 
 With versions 0.4.0 and 0.4.1, black-and-white pages have been printed on paper from a Mac and
 through a Raspberry Pi, in Normal and in Fine quality, and as Secure Print jobs released on the
-printer's panel with their PIN. Version 0.5.0 gives the same printer data in the project's tests and
-has not been printed on paper yet. Colour has so far only been compared with the data Brother's
+printer's panel with their PIN. Versions 0.5.0 and 0.5.1 give the same printer data in the project's
+tests and have not been printed on paper yet. Colour has so far only been compared with the data Brother's
 driver produces, because the test printer's cyan cartridge is empty. If a colour page looks wrong,
 please
 [open an issue](https://github.com/rolandzeiner/brother-hl3070cw-driver/issues).
