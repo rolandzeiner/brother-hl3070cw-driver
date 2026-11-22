@@ -63,12 +63,13 @@ def brother_options(options: str, title: str, user: str) -> str:
     return " ".join(out)
 
 
-def brother_common(raster: str, options: str, title: str, user: str, tries: int = 40,
+def brother_common(raster: str, options: str, title: str, user: str, tries: int = 120,
                    fake_time: int | None = None) -> bytes:
     ppd = oracle.BROTHER_OWN_PPD if "job-password=" in options else None
     options = brother_options(options, title, user)
-    for _ in range(tries):
-        out = oracle.run(raster, options, job=title, user=user, fake_time=fake_time, ppd=ppd)
+    for attempt in range(tries):
+        # a new stack layout each time: in some environments every run gives the rare variant
+        out = oracle.run(raster, options, job=title, user=user, fake_time=fake_time, ppd=ppd, shift=attempt * 37)
         if b"MANUALDPX" in out:
             continue
         job = pxl.parse(out)

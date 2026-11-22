@@ -34,12 +34,17 @@ BROTHER_OWN_PPD = "/Library/Printers/PPDs/Contents/Resources/Brother HL-3070CW s
 
 
 def run(raster_path: str, options: str = "", job: str = "t", user: str = "rz", fake_time: int | None = None,
-        ppd: str | None = None) -> bytes:
+        ppd: str | None = None, shift: int = 0) -> bytes:
     """Return the printer data Brother's filter produces for a raster file.
 
     fake_time pins the job timestamp (needs build/faketime.dylib, see tools/faketime.c).
+    shift lengthens the environment, which moves the filter's stack: what it
+    finds in its uninitialised memory there can be the same in every run
+    otherwise.
     """
     env = dict(os.environ, PPD=ppd or brother_ppd())
+    if shift:
+        env["HL3070CW_ORACLE_SHIFT"] = "x" * shift
     if fake_time is not None:
         if not os.path.exists(FAKETIME):
             raise FileNotFoundError("build/faketime.dylib missing: make faketime")
