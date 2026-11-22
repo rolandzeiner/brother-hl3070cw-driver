@@ -217,7 +217,7 @@ def cases():
     yield "secure print Mono", "A6", [page_dot("A6")], "BRMonoColor=Mono job-password=1234", {"_title": "Payslips November.pdf", "_user": "roland"}
     yield "secure print colour, enhance black", "A6", [page_patches("A6", edge_colours(200))], "BRMonoColor=Auto BREnhanceBlkPrt=ON job-password=0042", {}
     yield "secure print Fine", "A6", [page_random_bw("A6", seed=9, nrows=60)], f"BRMonoColor=Mono job-password=9870 {F}", {}
-    # added for 1.1: custom paper
+    # added for 0.5.2: custom paper
     for size in rw.CUSTOM_SIZES:
         yield f"custom paper {size[7:]}", size, [page_dot(size)], f"BRMonoColor=Mono PageSize={size}", {}
 

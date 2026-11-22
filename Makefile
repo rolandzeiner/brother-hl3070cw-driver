@@ -80,6 +80,7 @@ SCRIPTS  := install.sh install-linux.sh uninstall.sh packaging/postinstall packa
             docker/web/patch-templates.sh tests/linux-package.sh tests/macos-package.sh
 
 lint:
+	python3 -I tests/add-brother-data.py
 ifneq ($(TIDY),)
 	$(TIDY) --quiet --warnings-as-errors='*' $(SRC) tests/fine_lines.c docker/web-gate.c -- $(BASE) $(if $(filter Darwin,$(OS)),-isysroot $$(xcrun --show-sdk-path))
 else
@@ -91,7 +92,7 @@ endif
 	# filters, profiles: the PPD names files of an installed driver, which a build machine has not got
 	cupstestppd -q -W filters -W profiles ppd/*.ppd ppd/linux/*.ppd ppd/siblings/*.ppd ppd/linux/siblings/*.ppd
 	python3 -I tools/genppd.py --check
-	python3 -I -m compileall -q tools tests/print-server
+	python3 -I -m compileall -q tools tests/print-server tests/add-brother-data.py
 
 # Compare with the stored reference outputs (works without Rosetta).
 test: $(BIN)

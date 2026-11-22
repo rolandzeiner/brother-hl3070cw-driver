@@ -93,7 +93,7 @@ main() {
         log "Brother's driver is not installed, but a copy of its data is already in $DRIVER_DIR/data"
     else
         warn "Brother's HL-3070CW driver is not installed, so the native driver cannot be set up."
-        warn "Install Brother's driver once (its data files are needed, not its filter), or use the PostScript PPD."
+        warn "Install Brother's driver once (its data files are needed, not its filter), run $DRIVER_DIR/add-brother-data.sh with Brother's package, or use the PostScript PPD."
     fi
 
     log "Installing the PPD files into $PPD_DIR"

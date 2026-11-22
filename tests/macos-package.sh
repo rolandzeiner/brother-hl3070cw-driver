@@ -104,6 +104,7 @@ PY
 
     sudo "$DRIVER_DIR/uninstall.sh"
     [[ ! -e $DRIVER_DIR ]] || fail "uninstall left $DRIVER_DIR"
+    [[ ! -e "/$MODELS/Brother HL-3040CN native.ppd" ]] || fail "uninstall left a sibling printer's PPD"
     printf 'OK   installed, printed, updated and uninstalled\n'
 }
 

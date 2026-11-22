@@ -42,15 +42,15 @@ This project is not made or endorsed by Brother.
 | Printer | Native driver | PostScript driver | Tested |
 |---|:---:|:---:|:---:|
 | HL-3070CW | Yes | Yes | **Yes** |
-| HL-3040CN | Yes, from 1.1 | No | No |
-| HL-3045CN | Yes, from 1.1 | No | No |
-| HL-3075CW | Yes, from 1.1 | No | No |
-| DCP-9010CN | Yes, from 1.1 | No | No |
-| MFC-9010CN | Yes, from 1.1 | No | No |
-| MFC-9120CN | Yes, from 1.1 | No | No |
-| MFC-9125CN | Yes, from 1.1 | No | No |
-| MFC-9320CW | Yes, from 1.1 | No | No |
-| MFC-9325CW | Yes, from 1.1 | No | No |
+| HL-3040CN | Yes, from 0.5.2 | No | No |
+| HL-3045CN | Yes, from 0.5.2 | No | No |
+| HL-3075CW | Yes, from 0.5.2 | No | No |
+| DCP-9010CN | Yes, from 0.5.2 | No | No |
+| MFC-9010CN | Yes, from 0.5.2 | No | No |
+| MFC-9120CN | Yes, from 0.5.2 | No | No |
+| MFC-9125CN | Yes, from 0.5.2 | No | No |
+| MFC-9320CW | Yes, from 0.5.2 | No | No |
+| MFC-9325CW | Yes, from 0.5.2 | No | No |
 
 *Tested* means that this driver has printed on that printer, on paper. On the HL-3070CW that was in
 black and white. Colour has not been printed on paper yet ([What works](#what-works)).
@@ -102,7 +102,7 @@ package is `Brother_PrinterDrivers_ColorLaser`, version 5.0.0. Whether that down
 same files, and whether it installs on macOS 27, has not been checked. Only the data files are used;
 Brother's Intel program is never run.
 
-From version 1.1 you can also take the data out of Brother's package without installing it. Install
+From version 0.5.2 you can also take the data out of Brother's package without installing it. Install
 this driver (steps 2 to 4), then give the package to this helper, without `sudo`:
 
 - Brother's Mac package, a `.pkg`. If you have a `.dmg`, open it and use the `.pkg` inside. This was
@@ -213,13 +213,13 @@ native driver; [What works](#what-works) shows which of them the PostScript driv
 - **Improve Gray Color**, **Enhance Black Printing**, **Toner Save Mode** and **Improve Print
   Output** (less paper curl or better toner fixing) work as in Brother's driver. Enhance Black
   Printing applies to colour jobs only.
-- **Custom paper sizes** (from version 1.1) from 70 x 116 mm to 215.9 x 406.4 mm work with the
+- **Custom paper sizes** (from version 0.5.2) from 70 x 116 mm to 215.9 x 406.4 mm work with the
   native driver. The data matches what Brother's driver sends. Choosing them in the print dialog,
   and printing them on paper, has not been tested.
 - **Paper size**, **paper source** (tray or manual feed) and **media type** (plain, thin, thick,
   envelopes, labels and more) are in the usual places.
 
-From version 1.1 the options are in English and German, following the language of your system. The
+From version 0.5.2 the options are in English and German, following the language of your system. The
 names in this guide are the English ones.
 
 To make black and white the default, open the print dialog, set **Color / Mono** to **Mono** and
@@ -392,14 +392,14 @@ the same data, untested on paper.
 | Black and white | Identical to Brother's driver, byte for byte | The printer's own rendering |
 | Colour | Brother's colour tables and halftones; about 99.96 % of all dots identical to Brother's driver | The printer's own rendering |
 | Fine quality (2400 dpi class) | The same dots as Brother's driver (in colour: as above); the compressed data matches Brother's for about 95 % of lines | Not available |
-| Paper sizes | All 22 of Brother's driver, and custom sizes from 1.1 | All 22 |
+| Paper sizes | All 22 of Brother's driver, and custom sizes from 0.5.2 | All 22 |
 | Tray and manual feed | Yes | Yes |
 | Media types | All 11 | All 11 |
 | Color / Mono / Auto, Color Mode, Improve Gray, Enhance Black, Improve Print Output | Yes | Color / Mono only |
 | Toner Save | Yes | Yes |
 | Secure Print (PIN) | Yes | No |
 | Sleep Time (the printer's power-saving delay) | No, set it on the printer | No, set it on the printer |
-| Option names in German | From 1.1 | From 1.1 |
+| Option names in German | From 0.5.2 | From 0.5.2 |
 
 The driver has been tested with an HL-3070CW connected over Wi-Fi. Ethernet and USB should work the
 same way but have not been tested.
@@ -511,15 +511,16 @@ inside the sandbox macOS puts around printer drivers. Linux has no such sandbox:
 confined only by the unprivileged account CUPS runs it as (usually `lp`).
 
 The installers and `add-brother-data.sh` run one step of the driver as root: copying Brother's
-data. (The helper opens Brother's package as you.) That step takes no
-paths from its command line, follows no symbolic links inside Brother's package and uses only
+data. (The helper opens Brother's package as you and gives root no path that you could change.)
+That step takes no paths from its command line, follows no symbolic links inside Brother's package and uses only
 files that belong to root and are not writable by everyone.
 
 The code has been reviewed for security problems by its authors, with sanitizer builds, damaged
 input files and static analysis. Those reviews are not a guarantee: they missed flaws in that
 copying step, which were found with CodeQL's help and fixed in 0.5.0, and flaws in the Docker print
-server's access rules, fixed in 0.5.2. No outside party has audited the code. `make check` and `make lint` repeat the tests. GitHub runs both on every push to `main` and
-`dev`, along with CodeQL, which scans the Mac build.
+server's access rules, fixed in 0.5.2. No outside party has audited the code. `make check` and
+`make lint` repeat the tests. GitHub runs both on every push to `main` and `dev`, along with CodeQL,
+which scans the Mac build.
 
 Like Brother's driver, this one sends the title of the document and your user name to the
 printer with every job, and the connection to the printer is not encrypted. Use the printer on a

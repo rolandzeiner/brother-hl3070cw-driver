@@ -208,7 +208,7 @@ def native(linux: bool = False, sibling: str | None = None) -> str:
     if sibling:
         name = sibling.removesuffix(" series")
         lines = header(f"Brother {name} native", f"Brother {name}, native driver (open source, untested)",
-                       f"{name} native", name.replace("-", "")[-6:] + "NA.PPD", sibling,
+                       f"{name} native", name[0] + name.replace("-", "")[-6:] + "N.PPD", sibling,
                        f"MFG:Brother;MDL:{sibling};")
         lines.append("*% Untested on hardware: printer data as for the HL-3070CW, which Brother's filter writes for it too")
     else:

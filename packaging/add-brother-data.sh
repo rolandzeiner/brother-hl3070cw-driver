@@ -10,7 +10,10 @@
 #                                 the data there is (the installers use this)
 #
 # Run it as yourself: it asks for the admin password where needed. The package
-# is opened without root; as root only the fixed folder below is used.
+# is opened without root. Root is never given a path that the user can change
+# (it would follow a link put there meanwhile): the unpacked package reaches it
+# through a pipe, the PPDs are edited where only root can write.
+# tests/add-brother-data.py tests that.
 # Exit status: 0 = done, 1 = failed, 2 = could not start.
 # Written for macOS's /bin/bash 3.2.
 
@@ -21,7 +24,9 @@ readonly PPD_DIR=/Library/Printers/PPDs/Contents/Resources
 readonly FILTER=$DRIVER_DIR/rastertohl3070cw
 readonly UNPACK_DIR=$DRIVER_DIR/unpack # where the filter looks for a package (--unpacked)
 readonly SUDO_BIN=/usr/bin/sudo INSTALL=/usr/bin/install MKDIR=/bin/mkdir RM=/bin/rm
-readonly BSDTAR=/usr/bin/bsdtar PKGUTIL=/usr/sbin/pkgutil
+readonly BSDTAR=/usr/bin/bsdtar PKGUTIL=/usr/sbin/pkgutil SED=/usr/bin/sed SHASUM=/usr/bin/shasum
+# hl3070cwlpr-1.1.2-1.i386.rpm, the package this driver is tested with
+readonly BROTHER_RPM_SHA256=147208bf44976d488f73ad144187182301983de2821b0efe9a1370d3552dfb22
 
 WORK=''
 UNPACKING=0
@@ -30,7 +35,6 @@ main() {
     (($# == 1)) || usage
     if ((EUID == 0)); then SUDO=(); else SUDO=("$SUDO_BIN"); fi
     [[ -x $FILTER ]] || die "install the HL-3070CW driver first"
-    WORK=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/hl3070cw-data.XXXXXX") || die "cannot create a temporary folder"
     case "$1" in
     --ppds-only) install_ppds ;;
     -*) usage ;;
@@ -44,8 +48,10 @@ main() {
 }
 
 add_data() {
-    local file=$1 root=$WORK/root found
+    local file=$1 root found sum
     [[ -f $file ]] || die "$file does not exist"
+    WORK=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/hl3070cw-data.XXXXXX") || die "cannot create a temporary folder"
+    root=$WORK/root
     /bin/mkdir -p -- "$root"
     case "$file" in
     *.pkg)
@@ -57,6 +63,10 @@ add_data() {
         /bin/mv -- "$found" "$root/Library/Printers/Brother"
         ;;
     *.rpm)
+        sum=$("$SHASUM" -a 256 <"$file") || die "cannot read $file"
+        if [[ ${sum%% *} != "$BROTHER_RPM_SHA256" ]]; then
+            printf '[WARN] %s\n' "$file is not the package this driver was tested with (hl3070cwlpr-1.1.2-1.i386.rpm, SHA-256 $BROTHER_RPM_SHA256)." >&2
+        fi
         "$BSDTAR" -xf "$file" -C "$root" || fail "cannot open $file"
         [[ -d $root/opt/brother/Printers/hl3070cw ]] || fail "$file is not Brother's HL-3070CW driver (hl3070cwlpr)"
         printf '%s\n' "The Linux package has no colour profiles: colours, and possibly greys, will look" \
@@ -64,13 +74,13 @@ add_data() {
         ;;
     *) die "give Brother's .pkg (open a .dmg first and use the .pkg in it) or its Linux .rpm" ;;
     esac
-    COPYFILE_DISABLE=1 "$BSDTAR" -C "$root" -cf "$WORK/data.tar" . || fail "cannot read the unpacked package"
 
     UNPACKING=1
     as_root "$RM" -rf -- "${UNPACK_DIR:?}"
     as_root "$MKDIR" -m 700 -- "$UNPACK_DIR"
     as_root "$MKDIR" -m 755 -- "$UNPACK_DIR/package"
-    as_root "$BSDTAR" --no-same-owner --no-same-permissions -xf "$WORK/data.tar" -C "$UNPACK_DIR/package" ||
+    COPYFILE_DISABLE=1 "$BSDTAR" -C "$root" -cf - . |
+        as_root "$BSDTAR" --no-same-owner --no-same-permissions -xf - -C "$UNPACK_DIR/package" ||
         fail "cannot unpack the data"
     as_root "$FILTER" --extract-brother-data --unpacked || fail "Copying Brother's data failed"
 }
@@ -78,7 +88,7 @@ add_data() {
 # The native PPDs: none without data, and without *cupsICC lines when there
 # are no colour profiles (macOS would look for the files they name).
 install_ppds() {
-    local data=0 profiles=0 src name use
+    local data=0 profiles=0 src name
     if "$FILTER" --check-data; then data=1; fi
     if [[ -f $DRIVER_DIR/data/profiles/broch08_PL_NM.icm && -f $DRIVER_DIR/data/profiles/broch08_PL_NM_IG_ON.icm ]]; then
         profiles=1
@@ -90,12 +100,13 @@ install_ppds() {
             as_root "$RM" -f -- "$PPD_DIR/$name"
             continue
         fi
-        use=$src
+        as_root "$INSTALL" -m 644 -o root -g wheel "$src" "$PPD_DIR/$name"
         if ((!profiles)); then
-            use="$WORK/$name"
-            /usr/bin/sed '/^\*cupsICC/d' "$src" >"$use" || fail "cannot prepare $name"
+            if ! as_root "$SED" -i '' '/^\*cupsICC/d' "$PPD_DIR/$name"; then
+                as_root "$RM" -f -- "$PPD_DIR/$name"
+                fail "cannot prepare $name"
+            fi
         fi
-        as_root "$INSTALL" -m 644 -o root -g wheel "$use" "$PPD_DIR/$name"
     done
 }
 

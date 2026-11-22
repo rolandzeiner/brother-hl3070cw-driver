@@ -15,8 +15,8 @@ one, a file that shows the problem.
 - `rastertohl3070cw --extract-brother-data`, which the installers run as root. It must not read or
   write outside Brother's driver folder and the driver's own, whatever is in Brother's package or
   changes while it runs.
-- `install.sh`, `install-linux.sh`, `uninstall.sh` and the installer package, which run with
-  administrator rights.
+- `install.sh`, `install-linux.sh`, `uninstall.sh`, `add-brother-data.sh` and the installer package,
+  which run with administrator rights.
 - The Docker print server's access rules: who may print, read or change jobs, and administer, as
   `docker/README.md` lists them and `tests/print-server/access.py` tests them.
 
@@ -28,23 +28,30 @@ None of them downloads anything or runs a program of Brother's.
 
 The Mac package (`.pkg`):
 
-- puts the filter and `uninstall.sh` into `/Library/Printers/HL3070CW-Native` and two PPDs into
+- puts the filter, `uninstall.sh`, `add-brother-data.sh` and a copy of the native PPDs into
+  `/Library/Printers/HL3070CW-Native`, and the PostScript PPD and the ten native ones into
   `/Library/Printers/PPDs/Contents/Resources`,
 - runs `packaging/postinstall`, which copies Brother's data with the filter
   (`--extract-brother-data`), checks an older copy (`--check-data`) if there is nothing to copy or
-  copying fails, removes the native PPD when there is no complete data, and gives printers that use
+  copying fails, removes the native PPDs when there is no complete data, and gives printers that use
   this driver the new PPD (`lpadmin -m`).
 
 `install.sh` runs as you and uses `sudo` for installing the same filter and PPDs, for copying
 Brother's data and, with `--uninstall`, for removing them and the package receipt. It calls
 `lpadmin` as you.
 
-`add-brother-data.sh` runs as you and opens Brother's package as you. With `sudo` it unpacks only
-the result into `/Library/Printers/HL3070CW-Native/unpack`, which only root can enter, runs the
-filter's `--extract-brother-data --unpacked`, removes that folder and installs the native PPDs. The
-package and `install.sh` call it with `--ppds-only` for the last of these.
+`add-brother-data.sh` runs as you and opens Brother's package as you. It hands the result through a
+pipe to `sudo bsdtar`, which unpacks it in `/Library/Printers/HL3070CW-Native/unpack`, a folder only
+root can enter. Then it runs the filter's `--extract-brother-data --unpacked`, removes that folder
+and installs the native PPDs from the driver's folder. Root is given no path that you, or a program
+running as you, can change (`tests/add-brother-data.py`). The package and `install.sh` call it with
+`--ppds-only` for the PPDs.
 
-`uninstall.sh` removes the driver's folder and both PPDs and forgets the package receipt. Printers
+`install.sh` and `install-linux.sh` install what is in your checkout or unpacked archive, and run
+that filter as root. A program running as you could change those files first. The installed
+package's scripts don't have that limit.
+
+`uninstall.sh` removes the driver's folder and its PPDs and forgets the package receipt. Printers
 are left as they are.
 
 `install-linux.sh` runs as root:
