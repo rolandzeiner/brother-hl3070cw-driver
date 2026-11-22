@@ -3,6 +3,7 @@
  *
  *   rastertohl3070cw job-id user title copies options [file]
  *   rastertohl3070cw --extract-brother-data [--unpacked]
+ *   rastertohl3070cw --check-data
  *   rastertohl3070cw --version
  *
  * Reads CUPS raster (RGB or grey, 8 bits per channel, 600 dpi) and writes
@@ -91,11 +92,30 @@
 #define MAX_PAGE_WIDTH 5200
 #define MAX_PAGE_HEIGHT 9600
 
+/* Custom paper, in points, as Brother's PPD allows it (*ParamCustomPageSize;
+ * its 328.32 pt arrive as 328 in the page header). */
+#define CUSTOM_MIN_WIDTH 198
+#define CUSTOM_MAX_WIDTH 612
+#define CUSTOM_MIN_HEIGHT 328
+#define CUSTOM_MAX_HEIGHT 1152
+
 static volatile sig_atomic_t g_cancelled;
 
 static void on_term(int sig) {
   (void)sig;
   g_cancelled = 1;
+}
+
+/* The printer data could not be written. Said once, and not for a cancelled
+ * job, whose backend may be gone. Returns the filter's status. */
+static int write_failed(void) {
+  static int said;
+  int err = errno;
+  if (!g_cancelled && !said) {
+    fprintf(stderr, "ERROR: cannot write the printer data: %s\n", strerror(err));
+    said = 1;
+  }
+  return 1;
 }
 
 /* ---- media tables ----------------------------------------------------------- */
@@ -133,13 +153,20 @@ static const size_entry sizes[] = {
 
 static unsigned absdiff(unsigned a, unsigned b) { return a > b ? a - b : b - a; }
 
-static xl_media_size media_size_for(unsigned w, unsigned h) {
+/* The paper for a page of w x h points: one of the printer's sizes, or a
+ * custom size in its range. -1 for anything else. */
+static int media_size_for(unsigned w, unsigned h, xl_media_size *out) {
   for (size_t i = 0; i < sizeof sizes / sizeof sizes[0]; i++)
-    if (absdiff(sizes[i].w, w) <= 1 && absdiff(sizes[i].h, h) <= 1)
-      return sizes[i].size;
+    if (absdiff(sizes[i].w, w) <= 1 && absdiff(sizes[i].h, h) <= 1) {
+      *out = sizes[i].size;
+      return 0;
+    }
+  if (w < CUSTOM_MIN_WIDTH || w > CUSTOM_MAX_WIDTH || h < CUSTOM_MIN_HEIGHT || h > CUSTOM_MAX_HEIGHT)
+    return -1;
   xl_media_size s = {XL_SIZE_CUSTOM, 0, NULL, (unsigned)lround(w * 254.0 / 72.0),
                      (unsigned)lround(h * 254.0 / 72.0)};
-  return s;
+  *out = s;
+  return 0;
 }
 
 typedef struct {
@@ -320,6 +347,47 @@ static int have_fine_data(int toner_save, int colour, int matching, int improve_
   return access(path, R_OK) == 0 || access(BROTHER_FILTER_PATH, R_OK) == 0;
 }
 
+#ifdef BROTHER_PROFILES
+/* for macOS's colour matching (named in the PPD): Normal, then Fine */
+#define NORMAL_PROFILES 2
+static const char *const profiles[] = {"broch08_PL_NM.icm", "broch08_PL_NM_IG_ON.icm", "broch08_PL_Fi.icm",
+                                       "broch08_PL_Fi_IG_ON.icm"};
+#endif
+
+/* --check-data, for the installers: whether the driver's copy of Brother's
+ * data has everything the native driver needs (Fine's files are extra, as in
+ * copy_brother_files). Reads the driver's folder only, says nothing when it
+ * is just not there. */
+static int data_complete(void) {
+  static const char planes[] = "kcmy";
+  char path[1024];
+  for (int p = 0; p < 4; p++)
+    for (int ts = 0; ts < 2; ts++) {
+      char name[64];
+      snprintf(name, sizeof name, "0600-%c%s_cache08.bin", planes[p], ts ? "-TS" : "");
+      brcd_cache c;
+      if (path_join(path, sizeof path, data_dir(), "/", name) || access(path, R_OK) != 0 || brcd_load(&c, path))
+        return 0;
+      int fine = c.fine;
+      brcd_free(&c);
+      if (fine)
+        return 0;
+    }
+#ifdef BROTHER_PROFILES
+  for (size_t i = 0; i < NORMAL_PROFILES; i++)
+    if (path_join(path, sizeof path, data_dir(), "/profiles/", profiles[i]) || access(path, R_OK) != 0)
+      return 0;
+#endif
+  color_table *t = malloc(sizeof *t);
+  int ok = t != NULL;
+  for (int m = 0; ok && m < 3; m++)
+    for (int g = 0; ok && g < 2; g++)
+      ok = path_join(path, sizeof path, data_dir(), "/", color_table_file((color_matching)m, g, 0)) == 0 &&
+           color_table_load(t, path) == 0;
+  free(t);
+  return ok;
+}
+
 /* The folder of Brother's driver: the installed one, or the same folder in
  * the package the installer unpacked. A package's content is not trusted:
  * below the package folder no symlink is followed, not even one that points
@@ -357,16 +425,13 @@ static int copy_brother_files(int from, int to) {
   if (color_tables_extract(from, BROTHER_FILTER, to))
     failed = 1;
 #ifdef BROTHER_PROFILES
-  /* ICC profiles for macOS's colour matching (named in the PPD): Normal, then Fine */
   int sub = fs_make_dir(to, "profiles");
   if (sub < 0)
     return 1;
-  static const char *const profiles[] = {"broch08_PL_NM.icm", "broch08_PL_NM_IG_ON.icm", "broch08_PL_Fi.icm",
-                                         "broch08_PL_Fi_IG_ON.icm"};
   for (size_t i = 0; i < sizeof profiles / sizeof profiles[0]; i++)
     if (path_join(path, sizeof path, BROTHER_PROFILES, "/", profiles[i]) ||
         fs_copy_file(from, path, sub, profiles[i], "acsp", 36)) { /* the ICC profile signature */
-      if (i >= 2)
+      if (i >= NORMAL_PROFILES)
         fine_missing = 1;
       else
         failed = 1;
@@ -424,6 +489,8 @@ int main(int argc, char *argv[]) {
     printf("rastertohl3070cw %s\n", DRIVER_VERSION);
     return 0;
   }
+  if (argc == 2 && !strcmp(argv[1], "--check-data"))
+    return data_complete() ? 0 : 1;
   if (argc >= 2 && !strcmp(argv[1], "--extract-brother-data")) {
     if (argc == 2)
       return extract_brother_data(0);
@@ -434,7 +501,8 @@ int main(int argc, char *argv[]) {
   }
   if (argc < 6 || argc > 7) {
     fputs("Usage: rastertohl3070cw job-id user title copies options [file]\n"
-          "       rastertohl3070cw --extract-brother-data [--unpacked]\n",
+          "       rastertohl3070cw --extract-brother-data [--unpacked]\n"
+          "       rastertohl3070cw --check-data\n",
           stderr);
     return 1;
   }
@@ -452,6 +520,7 @@ int main(int argc, char *argv[]) {
   sa.sa_flags = SA_RESTART;
   sigaction(SIGTERM, &sa, NULL);
   signal(SIGPIPE, SIG_IGN);
+  signal(SIGXFSZ, SIG_IGN); /* at a file size limit: an error from write(), not a silent death */
 
   cups_option_t *opts = NULL;
   int num_opts = cupsParseOptions(argv[5], 0, &opts);
@@ -525,6 +594,13 @@ int main(int argc, char *argv[]) {
       break;
     }
 
+    xl_media_size paper;
+    if (media_size_for(h.PageSize[0], h.PageSize[1], &paper)) {
+      fprintf(stderr, "ERROR: the printer does not take paper of %u x %u points\n", h.PageSize[0], h.PageSize[1]);
+      status = 1;
+      break;
+    }
+
     if (!started) {
       resolve_options(&o, num_opts, opts, &h);
       colour = o.color_mode != 2;
@@ -557,7 +633,7 @@ int main(int argc, char *argv[]) {
 
     xl_page pg;
     memset(&pg, 0, sizeof pg);
-    pg.size = media_size_for(h.PageSize[0], h.PageSize[1]);
+    pg.size = paper;
     pg.manual_feed = o.input_slot ? !strcasecmp(o.input_slot, "Manual")
                                   : (h.ManualFeed || h.MediaPosition == 4);
     pg.media_type = media_type_for(o.media_type, h.cupsMediaType);
@@ -606,14 +682,14 @@ int main(int argc, char *argv[]) {
           break;
         if (!started) {
           if (xl_job_begin(&w, stdout, &job)) {
-            status = 1;
+            status = write_failed();
             break;
           }
           started = 1;
         }
         fprintf(stderr, "INFO: Printing page %d\n", page);
         if (xl_page_begin(&w, &pg)) {
-          status = 1;
+          status = write_failed();
           break;
         }
         page_begun = 1;
@@ -643,13 +719,13 @@ int main(int argc, char *argv[]) {
         rows[0] = bits[0];
       }
       if (xl_page_row(&w, y, rows)) {
-        status = 1;
+        status = write_failed();
         break;
       }
     }
     if (page_begun) {
       if (xl_page_end(&w))
-        status = 1;
+        status = write_failed();
       fprintf(stderr, "PAGE: %d 1\n", page);
     }
     if (status)
@@ -658,7 +734,7 @@ int main(int argc, char *argv[]) {
 
   if (started) {
     if (xl_job_end(&w))
-      status = 1;
+      status = write_failed();
     xl_writer_free(&w);
   } else if (!status && !g_cancelled) {
     fputs("ERROR: no pages in the job\n", stderr);

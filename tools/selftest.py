@@ -16,7 +16,9 @@ holds for any data:
   stops the job instead of printing it openly, and the PIN appears nowhere
   but in its PJL line; Enhance Black Printing reaches colour jobs only;
 * damaged print data and damaged data files end in an error message, never
-  in a crash or a memory error;
+  in a crash or a memory error, and so does a paper size the printer does not
+  take and printer data that cannot be written;
+* --check-data says whether the copy of Brother's data is complete;
 * copying Brother's data out of a package follows no symlink, takes no path
   from the command line and, as root (run this file with sudo), nothing that
   another user owns or everyone may write to;
@@ -32,6 +34,7 @@ import argparse
 import fcntl
 import os
 import random
+import resource
 import shutil
 import signal
 import struct
@@ -289,6 +292,10 @@ def check_bad_input(data: str, td: str) -> None:
         "16 bits per colour": patched((384, 16), (388, 48), (392, width * 6)),
         "CMYK": patched((388, 32), (392, width * 4), (400, 6)),
         "banded colour order": patched((396, 1)),
+        # a whole page each, so that only the paper size is wrong
+        **{f"paper {w} x {h} pt": patched((352, w), (356, h), rows=height)
+           for w, h in ((0, 0), (10000, 10000), (65536, 65536), (0xFFFFFFFF, 0xFFFFFFFF), (297, 65536 + 420),
+                        (197, 500), (613, 500), (400, 327), (400, 1153))},
     }
     for name, raster in cases.items():
         for opts in ("BRMonoColor=Mono", "BRMonoColor=FullColor " + FINE):
@@ -325,6 +332,47 @@ def check_bad_input(data: str, td: str) -> None:
             check(rc == 1 and "ERROR:" in err and not out, f"{victim} {name}: status {rc}, want an error and no output")
             n += 1
     print(f"OK   {n} damaged data files end in an error message")
+
+
+def check_custom_sizes(data: str) -> None:
+    hdr = bytearray(b"3SaR" + rw.header("A6"))
+    width, height = struct.unpack_from("<II", hdr, 4 + 372)
+    body = b"\xff" * (width * 3 * height)
+    for size in ((198, 328), (612, 1152), (283, 709)):
+        struct.pack_into("<II", hdr, 4 + 352, *size)
+        rc, out, err = run(data, "BRMonoColor=Mono", bytes(hdr) + body)
+        check(rc == 0, f"custom paper {size}: refused: {err.strip()[:200]}")
+        if rc:
+            continue
+        page = next(op for op in pxl.parse(out).ops if op.name == "BeginPage")
+        want = tuple(int(v * 254 / 72 + 0.5) for v in size)
+        check(page.attrs.get("CustomMediaSize") == want, f"custom paper {size}: sent as {page.attrs}")
+    print("OK   custom paper sizes in the printer's range print")
+
+
+def check_write_failure(data: str, td: str) -> None:
+    """Printer data that cannot be written is an error with a message."""
+    _, source = bw_page("A6", seed=11, nrows=600)
+    path = os.path.join(td, "write.ras")
+    rw.write(path, "A6", [source])
+    env = {"HL3070CW_DATA": data, "SOURCE_DATE_EPOCH": EPOCH, "PATH": "/usr/bin:/bin"}
+
+    def small_file() -> None:
+        resource.setrlimit(resource.RLIMIT_FSIZE, (4096, 4096))
+
+    for opts in ("BRMonoColor=Mono", "BRMonoColor=FullColor " + FINE):
+        args = [FILTER, "1", "u", "t", "1", opts, path]
+        rd, wr = os.pipe()
+        os.close(rd)
+        closed = subprocess.run(args, stdout=wr, stderr=subprocess.PIPE, env=env, check=False)
+        os.close(wr)
+        with tempfile.TemporaryFile() as out:
+            full = subprocess.run(args, stdout=out, stderr=subprocess.PIPE, env=env, check=False, preexec_fn=small_file)
+        for what, res in (("closed pipe", closed), ("file size limit", full)):
+            err = res.stderr.decode(errors="replace")
+            check(res.returncode == 1 and err.count("ERROR: cannot write") == 1,
+                  f"{what} [{opts}]: status {res.returncode}, want one error: {err.strip()[:200]}")
+    print("OK   printer data that cannot be written is reported")
 
 
 def check_job_text(data: str, td: str) -> None:
@@ -620,6 +668,31 @@ def check_extract(data: str, td: str) -> None:
     check(len(made) == 16 + 12 + 1 and not any(n.startswith(".") for n in made), f"extract: unexpected files: {made}")
     check(len(os.listdir(os.path.join(dest, "profiles"))) == 4, "extract: profiles missing")
 
+    def complete() -> bool:
+        res = subprocess.run([FILTER, "--check-data"], capture_output=True, check=False,
+                             env={"HL3070CW_DATA": dest, "PATH": "/usr/bin:/bin"})
+        return res.returncode == 0
+
+    check(complete(), "check-data: a fresh copy is not taken as complete")
+    needed = [n for n in os.listdir(dest) if n.startswith(("0600-", "table-600-"))]
+    needed += ["profiles/broch08_PL_NM.icm", "profiles/broch08_PL_NM_IG_ON.icm"]
+    for name in needed:
+        path = os.path.join(dest, name)
+        with open(path, "rb") as f:
+            good = f.read()
+        os.remove(path)
+        check(not complete(), f"check-data: complete without {name}")
+        with open(path, "wb") as f:
+            f.write(good if name.startswith("profiles/") else good[:-1])
+        if not name.startswith("profiles/"):
+            check(not complete(), f"check-data: complete with {name} cut short")
+        with open(path, "wb") as f:
+            f.write(good)
+    check(complete(), "check-data: the restored copy is not taken as complete")
+    for name in ("capt-k_cache08.bin", "table-capt-grayon-normal.bin", "profiles/broch08_PL_Fi.icm"):
+        os.remove(os.path.join(dest, name))
+    check(complete(), "check-data: an installation without Fine is not taken as complete")
+
     def fifo(case, root, top, dest):
         os.remove(os.path.join(top, "lpd/filter"))
         os.mkfifo(os.path.join(top, "lpd/filter"))
@@ -755,6 +828,8 @@ def main() -> int:
         check_grey_input(data, td)
         check_fine_fallback(td)
         check_bad_input(data, td)
+        check_custom_sizes(data)
+        check_write_failure(data, td)
         check_job_text(data, td)
         check_secure_print(data, td)
         check_cancel(data)
