@@ -45,7 +45,7 @@ GitHub account or any developer tools.
 
 The driver comes in two versions:
 
-| | Brother HL-3070CW native | Brother HL-3070CW PostScript |
+| | Native driver | PostScript driver |
 |---|---|---|
 | Print quality | Same as Brother's driver | The printer renders the page itself; light greys and yellow come out weaker |
 | Needs Brother's driver files on the Mac | Yes | No |
@@ -81,8 +81,8 @@ Double-click the downloaded file. The first time, macOS refuses to open it:
 > compromise your privacy.
 
 macOS shows this for every installer that is not signed with a paid Apple developer certificate,
-which this free project does not have. The package is the one built from this repository's code.
-To open it anyway:
+which this free project does not have. GitHub builds the package from this repository's code, and
+the release's `SHA256SUMS` file has its checksum. To open it anyway:
 
 1. Click **Done**. Do not click **Move to Trash**.
 2. Open **System Settings** and click **Privacy & Security** in the sidebar.
@@ -126,13 +126,16 @@ already in the list, remove it first and add it again.
      **Protocol** to **HP Jetdirect - Socket**, and leave **Queue** empty. The printer's own
      display shows its IP address in its network settings.
 5. In **Use**, choose **Select Software...**, type `HL-3070CW` into the search field, select
-   **Brother HL-3070CW native** (or **Brother HL-3070CW PostScript**) and click **OK**.
+   **Brother HL-3070CW, native driver (open source)** (or
+   **Brother HL-3070CW, PostScript (BR-Script 3)**) and click **OK**. The entries ending in
+   *series CUPS* and *BR-Script3* (without a space) are Brother's own.
 6. Click **Add**.
 
 ## Print
 
 Print as usual. The printer's options are in the print dialog, in the section called
-**Printer Options** or **Printer Features** depending on your macOS version:
+**Printer Options** or **Printer Features** depending on your macOS version. The list is for the
+native driver; [What works](#what-works) shows which of them the PostScript driver has.
 
 - **Color / Mono**: *Auto* lets the printer decide, *Color* always prints in colour, *Mono* always
   in black and white. Choose *Mono* if a colour toner cartridge is empty: the printer refuses
@@ -158,7 +161,7 @@ your user name and the document with **+** and **−**, and enter the PIN.
 
 - The PIN must be 4 digits. A job with any other PIN is not printed at all. (Brother's driver
   prints such a job without a PIN.)
-- The printer lists your macOS user name and the title of the document.
+- The printer lists your user name and the title of the document.
 - Secure Print works with the native driver. The PostScript driver does not offer it.
 - From Terminal: `lp -o job-password=1234 document.pdf`.
 
@@ -166,9 +169,10 @@ your user name and the document with **+** and **−**, and enter the PIN.
 
 **macOS says the installer cannot be opened.** See [step 3](#3-open-the-installer).
 
-**"Brother HL-3070CW native" is not in the list of drivers.** Brother's driver files were not found
-when you installed. Install Brother's driver ([step 1](#1-check-for-brothers-driver)) and run this
-installer again. Until then, use **Brother HL-3070CW PostScript**.
+**"Brother HL-3070CW, native driver (open source)" is not in the list of drivers.** Brother's driver
+files were not found when you installed. Install Brother's driver
+([step 1](#1-check-for-brothers-driver)) and run this installer again. Until then, use
+**Brother HL-3070CW, PostScript (BR-Script 3)**.
 
 **Print Quality is missing from the print dialog.** The printer was added with an older version of
 this driver. Run the newest installer; it updates the printers that are already set up.
@@ -235,8 +239,17 @@ on Debian 12, Debian 13 and Ubuntu 24.04 before a release. 32-bit systems are no
    ```
 
    Without `--queue`, add the printer in your system's printer settings and choose
-   **Brother HL-3070CW, native driver (open source)** as the driver. For the PostScript driver,
-   which needs no files of Brother's, leave out `--brother-package` and add `--postscript`.
+   **Brother HL-3070CW, native driver (open source)** as the driver.
+
+   The PostScript driver needs no files of Brother's. `--postscript` works only together with
+   `--queue`:
+
+   ```sh
+   sudo ./install-linux.sh --postscript --queue HL3070CW --uri socket://192.0.2.10:9100
+   ```
+
+   Without Brother's files the installer warns that the native driver is missing and ends with
+   "Finished with problems". The PostScript printer is set up all the same.
 
 All options work as on a Mac, Fine and Secure Print included (`lp -o job-password=1234 file`). Two
 differences:
@@ -281,15 +294,18 @@ server in Docker, for example on a Raspberry Pi: see [docker/README.md](docker/R
 The driver has been tested with an HL-3070CW connected over Wi-Fi. Ethernet and USB should work the
 same way but have not been tested.
 
-Black-and-white pages have been printed on paper, in Normal and in Fine quality, and as a Secure
-Print job released on the printer's panel with its PIN. Colour has so far
-only been compared with the data Brother's driver produces, because the test printer's cyan
-cartridge is empty. If a colour page looks wrong, please
+With versions 0.4.0 and 0.4.1, black-and-white pages have been printed on paper from a Mac and
+through a Raspberry Pi, in Normal and in Fine quality, and as Secure Print jobs released on the
+printer's panel with their PIN. Version 0.5.0 gives the same printer data in the project's tests and
+has not been printed on paper yet. Colour has so far only been compared with the data Brother's
+driver produces, because the test printer's cyan cartridge is empty. If a colour page looks wrong,
+please
 [open an issue](https://github.com/rolandzeiner/brother-hl3070cw-driver/issues).
 
-Like every macOS printer driver of this kind (Brother's included), it is a PPD-based driver. macOS 27
-supports these fully. CUPS, the printing system inside macOS, has marked such drivers as deprecated
-for future versions, so a later macOS release could need a different approach.
+Like other printer drivers of this kind (Brother's included), it is a PPD-based driver. macOS 27 and
+CUPS 2.4, as in current Linux distributions, support these. CUPS, the printing system of macOS and
+Linux, has marked such drivers as deprecated, so a later version of either system could need a
+different approach.
 
 ## How it works
 
@@ -299,29 +315,33 @@ toner colours. Brother never published this format. It was worked out by feeding
 Brother's driver and decoding what came out, without disassembling Brother's code.
 [docs/FORMAT.md](docs/FORMAT.md) describes the format in full.
 
-The driver itself is a small program in C (`rastertohl3070cw`). macOS turns your document into an
-image; the driver converts the image into Brother's halftone dots and compresses them the way the
+The driver itself is a small program in C (`rastertohl3070cw`). The printing system turns your
+document into an image; the driver converts the image into Brother's halftone dots and compresses them the way the
 printer expects.
 
-The halftone patterns, colour tables and colour profiles are Brother's. The installer copies them
-from Brother's driver on your Mac into the driver's own folder
-(`/Library/Printers/HL3070CW-Native/data`), reading the colour tables out of Brother's driver
-program file. None of Brother's files are part of this repository, and Brother's Intel program is
-never run.
+The halftone patterns, colour tables and colour profiles are Brother's. On a Mac, the installer
+copies them from Brother's installed driver into `/Library/Printers/HL3070CW-Native/data`. On Linux,
+it takes the patterns and tables from Brother's Linux package or installed driver into
+`/usr/share/hl3070cw-native/data`; there are no profiles there. The colour tables are read out of
+Brother's driver program file. None of Brother's files are part of this repository or its releases,
+and Brother's Intel program is never run.
 
 ## For developers
 
-You need the Xcode command line tools (`xcode-select --install`). `make lint` also uses
-shellcheck and, if it is installed, clang-tidy (`brew install shellcheck llvm`).
+On a Mac you need the Xcode command line tools (`xcode-select --install`). `make lint` also uses
+shellcheck and, if it is installed, clang-tidy (`brew install shellcheck llvm`). On Linux, install
+`build-essential libcups2-dev python3` for `make`, `make check` and `make dist`. The other commands
+below are for a Mac.
 
 ```sh
-make                 # build/rastertohl3070cw, a universal binary (arm64 + x86_64)
+make                 # build/rastertohl3070cw (on a Mac universal: arm64 + x86_64)
 make check           # sanitizer build on made-up data: needs nothing of Brother's
                      # (Raspberry Pi OS: make check SANITIZE=undefined)
 make lint            # clang-tidy or the Clang analyzer, shellcheck, cupstestppd
 make test            # compare with checksums of Brother's output (needs Brother's data files, no Rosetta)
 make oracle-test     # compare live with Brother's driver (needs it and Rosetta 2)
 python3 -I tools/finecheck.py --real   # Fine: image and line-by-line comparison
+                     # (exits 1: random colours differ slightly, see docs/FORMAT.md)
 make pkg             # macOS: the installer package, in build/pkg/
 make dist            # Linux: the release package for this processor, in build/dist/
 ./install.sh         # install from the source tree (asks for the admin password)
@@ -339,11 +359,13 @@ build/rastertohl3070cw 1 user title 1 "BRMonoColor=Mono" page.ras > page.prn
 Repository layout:
 
 - `src/`: the CUPS filter. `xl2hb.c` writes the printer language and compresses lines, `fine.c`
-  compresses Fine lines, `halftone.c` and `color.c` turn pixels into toner dots, `fsutil.c` writes
-  files safely when copying Brother's data.
-- `ppd/`: the two PPD files, generated by `tools/genppd.py`; `ppd/linux/` holds the native one for
-  Linux.
+  compresses Fine lines, `halftone.c` and `color.c` turn pixels into toner dots, `fsutil.c` reads
+  and writes files safely when copying Brother's data.
+- `ppd/`: the PPD files, generated by `tools/genppd.py`: the native one for macOS, its Linux version
+  in `ppd/linux/`, and the PostScript one for both systems.
+- `install.sh`, `uninstall.sh`: install from the source tree and uninstall, on a Mac.
 - `install-linux.sh`: the Linux installer.
+- `docker/`: the print server.
 - `tests/linux-package.sh`: installs a Linux release package in a throwaway container, prints
   through CUPS and uninstalls it again. GitHub runs it for both processors.
 - `tests/macos-package.sh`: the same for the Mac installer, on GitHub's build machines only.
@@ -356,6 +378,8 @@ Repository layout:
 - `tools/selftest.py` and `tests/fine_lines.c`: `make check`. It runs the filter with
   AddressSanitizer and UndefinedBehaviorSanitizer on halftone tiles and colour tables it makes up
   itself, so it also works where Brother's driver is not installed, as on GitHub's build machines.
+  It also tests cancelling and attacks the copying of Brother's data. After `make check`,
+  `sudo python3 -I tools/selftest.py` adds the checks that only work as root.
 - `docs/FORMAT.md`: the printer language.
 
 Brother's driver is the reference for the tests, and it only runs under Rosetta 2. Work that needs
@@ -365,28 +389,31 @@ macOS 27 or earlier. `tools/finecheck.py` compares Fine output with Brother's li
 ## Security
 
 The driver reads print jobs from any user who may print, so it checks every page before it
-allocates memory or writes anything, and refuses pages larger than the printer can print. It runs
-inside the sandbox macOS puts around printer drivers: it reads its data files and the print job,
-writes the printer data, and does nothing else.
+allocates memory or writes anything, and refuses pages larger than the printer can print. It reads
+its data files and the print job, writes the printer data, and does nothing else. On a Mac it runs
+inside the sandbox macOS puts around printer drivers. Linux has no such sandbox: there the driver is
+confined only by the unprivileged account CUPS runs it as (usually `lp`).
 
 The installers run one step of the driver as root: copying Brother's data. That step takes no
 paths from its command line, follows no symbolic links inside Brother's package and uses only
-files that belong to root and that others cannot change.
+files that belong to root and are not writable by everyone.
 
 The code has been reviewed for security problems by its authors, with sanitizer builds, damaged
 input files and static analysis. Those reviews are not a guarantee: they missed flaws in that
 copying step, which were found with CodeQL's help and fixed in 0.5.0. No outside party has audited
-the code. `make check` and `make lint` repeat the tests, and GitHub runs both, and CodeQL, on every
-change.
+the code. `make check` and `make lint` repeat the tests. GitHub runs both on every push to `main` and
+`dev`, along with CodeQL, which scans the Mac build.
 
-Like Brother's driver, this one sends the title of the document and your macOS user name to the
+Like Brother's driver, this one sends the title of the document and your user name to the
 printer with every job, and the connection to the printer is not encrypted. Use the printer on a
 network you trust.
 
 A Secure Print PIN keeps a printout from people at the printer, not from people who can read the
-network or use your Mac. It travels to the printer unencrypted like the rest of the job. When a
-job fails, macOS's printing system writes the job's settings, the PIN included, into its log
-file `/var/log/cups/error_log`, which every user of the Mac can read.
+network or use your computer. It travels to the printer unencrypted like the rest of the job. When a
+job fails, CUPS writes the job's settings, the PIN included, into its log file
+`/var/log/cups/error_log`. Every user of a Mac can read that file; on Debian and Ubuntu, root and
+members of the `adm` group can. The Docker print server switches this logging off, unless you set
+its `LOG_LEVEL` to `debug`.
 
 To report a security problem, see [SECURITY.md](SECURITY.md).
 
@@ -395,5 +422,5 @@ To report a security problem, see [SECURITY.md](SECURITY.md).
 The code in this repository is under the [MIT License](LICENSE).
 
 Brother and HL-3070CW are trademarks of Brother Industries, Ltd. This project is independent and not
-affiliated with or endorsed by Brother. Brother's software and data are not included; the installer
-uses the copy of Brother's driver that is installed on your Mac.
+affiliated with or endorsed by Brother. Brother's software and data are not included; the installers
+use your own copy of Brother's driver.
